@@ -48,33 +48,30 @@ struct Msg
     byte pos;
     byte value[n_values];
   };
-struct Color
-  {
-    byte r;
-    byte g;
-    byte b;
-  };
 struct Preset
   {
-    byte presetType;
+    byte presetConf;                  // Bit 6 - lpToggleMode, Bit 5 - spToggleMode, Bit 4-0 Preset Type
     char longName[25] = "EMPTY";
     char pShortName[9] = "EMPTY";
     char pToggleName[9] = "EMPTY";
-    boolean pToggleMode;
     char lpShortName[9] = "EMPTY";
     char lpToggleName[9] = "EMPTY";
-    boolean lpToggleMode;
-    struct Color color[2];
+    byte color;                       // Bit 6 - Color type (Off, Dimmer), Bit 5-0 color
     struct Msg message[n_messages];
   };
 struct Page
   {
     struct Preset preset[n_presets];
   };
+struct OmniPort
+  {
+    struct Msg message[n_messages];
+  };
 struct Bank
   {
     char bankName[25];
     struct Page page[2];
+    struct OmniPort port[2];
   };
 struct Data
   {
@@ -186,6 +183,10 @@ void checkButtons() {
   }
 }
 
+byte bitValue(byte num, byte pos) {
+  return ((num >> pos)&0x01);
+}
+
 void togglePag() {
   if (pageNumber == 1) {
     pageNumber = 2;
@@ -231,7 +232,7 @@ void btnPressed(byte i) {
           // Trigger Long Press Release Action
           checkMsg(4);
           // Change Toggle
-          if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpToggleMode == 1) {
+          if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 1) {
             if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0) {
               posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong = 1;
             } else {
@@ -247,7 +248,7 @@ void btnPressed(byte i) {
       // Trigger Release Action
       checkMsg(2);
       // Change Toggle
-      if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].pToggleMode == 1) {
+      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 5) == 1) {
         if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle == 0) {
           posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle = 1;
         } else {
@@ -329,18 +330,18 @@ void sendMIDIMessage(byte i) {
       byte num3 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[3]);
       
       for(int i=0; i<7; i++){
-        if (((num1 >> i)&0x01) == 1) {
+        if (bitValue(num1, i) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             posData.bank[bankNumber-1].page[0].preset[i].posSingle = 1;
           } else if (actionToggle == 2) {
             posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
           }
-        } else if ((((num1 >> i)&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num1, i) == 0) && (actionToggle == 0)) {
           posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
         }
       }
       for(int i=7; i<14; i++){
-        if (((num2 >> (i-7))&0x01) == 1) {
+        if (bitValue(num2, (i-7)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             if (i < n_presets) {
               posData.bank[bankNumber-1].page[0].preset[i].posSingle = 1;
@@ -354,7 +355,7 @@ void sendMIDIMessage(byte i) {
               posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posSingle = 0;
             }
           }
-        } else if ((((num2 >> (i-7))&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num2, (i-7)) == 0) && (actionToggle == 0)) {
           if (i < n_presets) {
             posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
           } else {
@@ -363,13 +364,13 @@ void sendMIDIMessage(byte i) {
         }
       }
       for(int i=14; i<16; i++){
-        if (((num3 >> (i-14))&0x01) == 1) {
+        if (bitValue(num3, (i-14)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 1;
           } else if (actionToggle == 2) {
             posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
           }
-        } else if ((((num3 >> (i-14))&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num3, (i-14)) == 0) && (actionToggle == 0)) {
           posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
         }
       }
@@ -384,18 +385,18 @@ void sendMIDIMessage(byte i) {
       byte num3 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[3]);
       
       for(int i=0; i<7; i++){
-        if (((num1 >> i)&0x01) == 1) {
+        if (bitValue(num1, i) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             posData.bank[bankNumber-1].page[0].preset[i].posLong = 1;
           } else if (actionToggle == 2) {
             posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
           }
-        } else if ((((num1 >> i)&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num1, i) == 0) && (actionToggle == 0)) {
           posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
         }
       }
       for(int i=7; i<14; i++){
-        if (((num2 >> (i-7))&0x01) == 1) {
+        if (bitValue(num2, (i-7)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             if (i < n_presets) {
               posData.bank[bankNumber-1].page[0].preset[i].posLong = 1;
@@ -409,7 +410,7 @@ void sendMIDIMessage(byte i) {
               posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posLong = 0;
             }
           }
-        } else if ((((num2 >> (i-7))&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num2, (i-7)) == 0) && (actionToggle == 0)) {
           if (i < n_presets) {
             posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
           } else {
@@ -418,13 +419,13 @@ void sendMIDIMessage(byte i) {
         }
       }
       for(int i=14; i<16; i++){
-        if (((num3 >> (i-14))&0x01) == 1) {
+        if (bitValue(num3, (i-14)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 1;
           } else if (actionToggle == 2) {
             posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 0;
           }
-        } else if ((((num3 >> (i-14))&0x01) == 0) && (actionToggle == 0)) {
+        } else if ((bitValue(num3, (i-14)) == 0) && (actionToggle == 0)) {
           posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 0;
         }
       }
