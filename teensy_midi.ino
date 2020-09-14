@@ -8,15 +8,22 @@
 #define n_presets 8
 #define n_banks 12
 #define n_values 4
+#define save_button 2
+#define prev_button 3
+#define next_button 4
+#define exit_button 5
 
 
 // Settings
 boolean sendMIDIMonitor = false;
 byte port1Type;
 byte port2Type;
+byte ringBright;
+byte ringDim;
+boolean editMode = false;
 unsigned int debounceTime;
 unsigned int longPressTime;
-unsigned int banknameTime;
+unsigned int notificationTime;
 unsigned long pressedTime  = 0;
 char presetsName[16] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'};
 
@@ -120,9 +127,11 @@ void setup() {
   // EEPROM
   debounceTime = EEPROM[1] * 10;
   longPressTime =  EEPROM[2] * 10;
-  banknameTime =  EEPROM[3] * 10;
+  notificationTime =  EEPROM[3] * 10;
   port1Type = EEPROM[4];
   port2Type = EEPROM[5];
+  ringBright = EEPROM[6];
+  ringDim = EEPROM[7];
   bankNumber = EEPROM[0];
   pageNumber = 1;
   buttonNumber = 1;
@@ -145,31 +154,54 @@ void checkButtons() {
       pressedTime = millis();
       delay(debounceTime);
       if(digitalRead(i)== HIGH){
-        // A + B check (Bank Down)
+        // A+B check (Bank Down)
         if (digitalRead(2)== HIGH && digitalRead(3)== HIGH) {
           pageNumber = 1;
           bankDown();
-          while (true) {
-            if (digitalRead(2)== LOW && digitalRead(3)== LOW) {
-              return;
-            }
-          }
-        // B + C check (Toggle Page)
+          checkMenuButtonRelease();
+        // B+C check (Toggle Page)
         } else if (digitalRead(3)== HIGH && digitalRead(4)== HIGH) {
           togglePag();
-          while (true) {
-            if (digitalRead(3)== LOW && digitalRead(4)== LOW) {
-              return;
-            }
-          }
-        // C + D check (Bank Up)
+          checkMenuButtonRelease();
+        // C+D check (Bank Up)
         } else if (digitalRead(4)== HIGH && digitalRead(5)== HIGH) {
           pageNumber = 1;
           bankUp();
-          while (true) {
-            if (digitalRead(4)== LOW && digitalRead(5)== LOW) {
-              return;
-            }
+          checkMenuButtonRelease();
+        // D+E check (Web Editor Mode)
+        } else if (digitalRead(5)== HIGH && digitalRead(6)== HIGH) {
+          if (editMode) {
+            editMode = false;
+            lcd.clear();
+            lcd.setCursor(1,0);
+            lcd.print(F("EDIT MODE OFF"));
+            delay(800);
+            lcdBankButton();
+          } else {
+            editMode = true;
+            lcd.clear();
+            lcd.setCursor(1,0);
+            lcd.print(F("EDIT MODE ON"));
+            delay(800);
+            lcdBankButton();
+          }
+          checkMenuButtonRelease();
+        // E+H check (Edit Menu)
+        } else if (digitalRead(6)== HIGH && digitalRead(9)== HIGH) {
+          if (!editMode) {
+            showConfMenu(1);
+            checkMenuButtonRelease();
+            confMenu();
+            lcdBankButton();
+            checkMenuButtonRelease();
+          } else {
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print(F("Exit Edit Mode"));
+            lcd.setCursor(0,1);
+            lcd.print(F("First"));
+            delay(800);
+            lcdBankButton();
           }
         } else {
           btnPressed(i);
@@ -183,41 +215,12 @@ void checkButtons() {
   }
 }
 
-byte bitValue(byte num, byte pos) {
-  return ((num >> pos)&0x01);
-}
-
-void togglePag() {
-  if (pageNumber == 1) {
-    pageNumber = 2;
-  } else {
-    pageNumber = 1;
-  }
-  lcdBankButton(false);
-}
-
-void bankDown() {
-  if (bankNumber == 1) {
-    bankNumber = n_banks;
-  } else {
-    bankNumber--;
-  }
-  lcdBankButton(false);
-}
-
-void bankUp() {
-  if (bankNumber == n_banks) {
-    bankNumber = 1;
-  } else {
-    bankNumber++;
-  }
-  lcdBankButton(false);
-}
-
 void btnPressed(byte i) {
   buttonNumber = i-1;
-  // Todo - mandar siempre USBData?
-  sendUSBPresetData();
+  
+  if (editMode) {
+    sendUSBPresetData();
+  }
   // Trigger Press Action
   checkMsg(1);
   
@@ -291,14 +294,14 @@ void sendMIDIMessage(byte i) {
     // Program Change
     case 1:
       MIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
-      if (sendMIDIMonitor) {
+      if (sendMIDIMonitor && editMode) {
         usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
       }
       break;
     // Program Change
     case 2:
       MIDI.sendControlChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
-      if (sendMIDIMonitor) {
+      if (sendMIDIMonitor && editMode) {
         usbMIDI.sendControlChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       }
       break;
@@ -459,7 +462,7 @@ void sendUSBBankData() {
 
 void sendSettingsData() {
   byte dataStart[] = { 0xF0, 0x03 };
-  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5] };
+  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[6], EEPROM[7] };
   byte dataEnd[] = { 0xF7 };
   usbMIDI.sendSysEx(2, dataStart, true);
   usbMIDI.sendSysEx(sizeof(eepromData), eepromData, true);
@@ -467,108 +470,124 @@ void sendSettingsData() {
 }
 
 void OnSysEx(byte* readData, unsigned sizeofsysex) {
-  sendMIDIMonitor = false;
-  unsigned sizeOfData = 0;
-  int bankOffset = (bankNumber-1)*(sizeof(data.bank[bankNumber-1]));
-  int presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print(F("Recieving data.."));
-
-  switch (readData[1]) {
-    // Save Preset Data
-    case 1:
-      sizeOfData = sizeof(struct Preset) + 6;
-      if (sizeofsysex == sizeOfData) {
-        bankNumber = readData[2];
-        pageNumber = readData[3];
-        buttonNumber = readData[4];
-        // Guardado en memoria
-        memcpy(&data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1], &readData[5], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
-    
-        // Guardado en EEPROM
-        i2cStat = myEEPROM.write((bankOffset + presetOffset),(byte*)&readData[5], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
-        if ( i2cStat != 0 ) {
-          lcd.clear();
-          lcd.setCursor(0,0);
-          lcd.print(F("EEPROM w error  "));
-          while (true) {}
-        }
-        lcd.setCursor(0,0);
-        lcd.print(F("Saved Preset    "));
-        delay(500);
-      }
-      break;
+  if (editMode) {
+    sendMIDIMonitor = false;
+    unsigned sizeOfData = 0;
+    int bankOffset = (bankNumber-1)*(sizeof(data.bank[bankNumber-1]));
+    int presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print(F("Recieving data.."));
+  
+    switch (readData[1]) {
+      // Save Preset Data
+      case 1:
+        sizeOfData = sizeof(struct Preset) + 6;
+        if (sizeofsysex == sizeOfData) {
+          bankNumber = readData[2];
+          pageNumber = readData[3];
+          buttonNumber = readData[4];
+          // Guardado en memoria
+          memcpy(&data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1], &readData[5], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
       
-    // Save Bank Data
-    case 2:
-      sizeOfData = sizeof(data.bank[bankNumber-1].bankName) + 4;
-      if (sizeofsysex == sizeOfData) {
-        bankNumber = readData[2];
-        // Guardado en memoria
-        memcpy(&data.bank[bankNumber-1].bankName, &readData[3], sizeof(data.bank[bankNumber-1].bankName));
-    
-        // Guardado en EEPROM
-        i2cStat = myEEPROM.write(bankOffset,(byte*)&readData[3], sizeof(data.bank[bankNumber-1].bankName));
-        if ( i2cStat != 0 ) {
-          lcd.clear();
+          // Guardado en EEPROM
+          i2cStat = myEEPROM.write((bankOffset + presetOffset),(byte*)&readData[5], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
+          if ( i2cStat != 0 ) {
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print(F("EEPROM w error  "));
+            while (true) {}
+          }
           lcd.setCursor(0,0);
-          lcd.print(F("EEPROM w error  "));
-          while (true) {}
+          lcd.print(F("Saved Preset    "));
+          delay(500);
         }
-        lcd.setCursor(0,0);
-        lcd.print(F("Saved Bank      "));
-        delay(500);
-      }
-      break;
+        break;
+        
+      // Save Bank Data
+      case 2:
+        sizeOfData = sizeof(data.bank[bankNumber-1].bankName) + 4;
+        if (sizeofsysex == sizeOfData) {
+          bankNumber = readData[2];
+          // Guardado en memoria
+          memcpy(&data.bank[bankNumber-1].bankName, &readData[3], sizeof(data.bank[bankNumber-1].bankName));
       
-    // Preset Data Request
-    case 3:
-      sizeOfData = 4;
-      if (sizeofsysex == sizeOfData) {
-        sendUSBPresetData();
-      }
-      break;
-    // Bank Data Request
-    case 4:
-      sizeOfData = 4;
-      if (sizeofsysex == sizeOfData) {
-        sendUSBBankData();
-      }
-      break;
-    // Settings Data Request
-    case 5:
-      sizeOfData = 4;
-      if (sizeofsysex == sizeOfData) {
-        sendSettingsData();
-      }
-      break;
-    // Save Settings Data
-    case 6:
-      sizeOfData = 8;
-      if (sizeofsysex == sizeOfData) {
-        EEPROM[1] = readData[2];
-        debounceTime = readData[2] * 10;
-        EEPROM[2] = readData[3];
-        longPressTime = readData[3] * 10;
-        EEPROM[3] = readData[4];
-        banknameTime = readData[4] * 10;
-        EEPROM[4] = readData[5];
-        port1Type =  readData[5];
-        EEPROM[5] = readData[6];
-        port2Type =  readData[6];
-        lcd.setCursor(0,0);
-        lcd.print(F("Saved Settings  "));
-        delay(500);
-      }
-      break;
-    // MIDI Monitor
-    case 7:
-      sendMIDIMonitor = true;
-      break;
+          // Guardado en EEPROM
+          i2cStat = myEEPROM.write(bankOffset,(byte*)&readData[3], sizeof(data.bank[bankNumber-1].bankName));
+          if ( i2cStat != 0 ) {
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print(F("EEPROM w error  "));
+            while (true) {}
+          }
+          lcd.setCursor(0,0);
+          lcd.print(F("Saved Bank      "));
+          delay(500);
+        }
+        break;
+        
+      // Preset Data Request
+      case 3:
+        sizeOfData = 4;
+        if (sizeofsysex == sizeOfData) {
+          sendUSBPresetData();
+        }
+        break;
+      // Bank Data Request
+      case 4:
+        sizeOfData = 4;
+        if (sizeofsysex == sizeOfData) {
+          sendUSBBankData();
+        }
+        break;
+      // Settings Data Request
+      case 5:
+        sizeOfData = 4;
+        if (sizeofsysex == sizeOfData) {
+          sendSettingsData();
+        }
+        break;
+      // Save Settings Data
+      case 6:
+        sizeOfData = 10;
+        if (sizeofsysex == sizeOfData) {
+          EEPROM[1] = readData[2];
+          debounceTime = readData[2] * 10;
+          EEPROM[2] = readData[3];
+          longPressTime = readData[3] * 10;
+          EEPROM[3] = readData[4];
+          notificationTime = readData[4] * 10;
+          EEPROM[4] = readData[5];
+          port1Type =  readData[5];
+          EEPROM[5] = readData[6];
+          port2Type =  readData[6];
+          EEPROM[6] = readData[7];
+          ringBright =  readData[7];
+          EEPROM[7] = readData[8];
+          ringDim =  readData[8];
+          lcd.setCursor(0,0);
+          lcd.print(F("Saved Settings  "));
+          delay(500);
+        }
+        break;
+      // MIDI Monitor
+      case 7:
+        sendMIDIMonitor = true;
+        break;
+    }
+    delay(300);
+    lcdBankButton();
+  } else {
+    if (readData[1] == 8) {
+      editMode = true;
+      lcd.clear();
+      lcd.setCursor(1,0);
+      lcd.print(F("EDIT MODE ON"));
+      sendUSBPresetData();
+      delay(800);
+      lcdBankButton();
+    }
   }
-  delay(300);
-  lcdBankButton();
 }
 
 void lcdBankButton(boolean presetRefresh) {
@@ -604,4 +623,474 @@ void lcdBankButton(boolean presetRefresh) {
     }
   }
   
+}
+
+byte bitValue(byte num, byte pos) {
+  return ((num >> pos)&0x01);
+}
+
+void togglePag() {
+  if (pageNumber == 1) {
+    pageNumber = 2;
+  } else {
+    pageNumber = 1;
+  }
+  lcdBankButton(false);
+}
+
+void bankDown() {
+  if (bankNumber == 1) {
+    bankNumber = n_banks;
+  } else {
+    bankNumber--;
+  }
+  lcdBankButton(false);
+}
+
+void bankUp() {
+  if (bankNumber == n_banks) {
+    bankNumber = 1;
+  } else {
+    bankNumber++;
+  }
+  lcdBankButton(false);
+}
+
+bool checkMenuButton(byte i) {
+  if(digitalRead(i)== HIGH){
+    delay(20);
+    if(digitalRead(i)== HIGH){
+      return true;
+    }
+  }
+  return false;
+}
+
+void showConfMenu(byte page) {
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print(F("Global Conf Menu"));
+}
+
+void checkMenuButtonRelease() {
+  boolean releaseAll = false;
+  while (!releaseAll) {
+    releaseAll = true;
+    for(int i=2; i<=9; i++){
+      if(digitalRead(i)== HIGH){
+        releaseAll = false;
+      }
+    }
+  }
+  delay(20);
+}
+
+void confMenu() {
+  byte page = 1;
+  while (true) {
+    // Button A
+    if(checkMenuButton(2)){
+      switch (page) {
+        case 1:
+          confMenuDebounceTime();
+          break;
+        case 2:
+          confMenuRingBright();
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button B
+    } else if(checkMenuButton(3)){
+      switch (page) {
+        case 1:
+          confMenuLongPressTime();
+          break;
+        case 2:
+          confMenuRingDim();
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button C
+    } else if(checkMenuButton(4)){
+      switch (page) {
+        case 1:
+          confMenuNotificationTime();
+          break;
+        case 2:
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button E
+    } else if(checkMenuButton(6)){
+      switch (page) {
+        case 1:
+          confMenuOmniPort1();
+          break;
+        case 2:
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button F
+    } else if(checkMenuButton(7)){
+      switch (page) {
+        case 1:
+          confMenuOmniPort2();
+          break;
+        case 2:
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button I
+    } else if(checkMenuButton(9)){
+      switch (page) {
+        case 1:
+          page = 2;
+          break;
+        case 2:
+          page = 1;
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printRing(byte confRing) {
+  lcd.setCursor(10,1);
+  lcd.print(F("      "));
+  lcd.setCursor(10,1);
+  lcd.print(confRing);
+}
+
+void confMenuRingBright() {
+  byte confRingBright = EEPROM[6];
+  lcd.setCursor(0,1);
+  lcd.print(F("Ring brt: "));
+  printRing(confRingBright);
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confRingBright != EEPROM[6]) {
+        EEPROM[6] = confRingBright;
+        ringBright = confRingBright;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confRingBright > 25) {
+        confRingBright -= 5;
+      } else {
+        confRingBright = 100;
+      }
+      printRing(confRingBright);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confRingBright < 100) {
+        confRingBright += 5;
+      } else {
+        confRingBright = 25;
+      }
+      printRing(confRingBright);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void confMenuRingDim() {
+  byte confRingDim = EEPROM[7];
+  lcd.setCursor(0,1);
+  lcd.print(F("Ring dim: "));
+  printRing(confRingDim);
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confRingDim != EEPROM[7]) {
+        EEPROM[7] = confRingDim;
+        ringDim = confRingDim;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confRingDim > 0) {
+        confRingDim -= 5;
+      } else {
+        confRingDim = 50;
+      }
+      printRing(confRingDim);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confRingDim < 50) {
+        confRingDim += 5;
+      } else {
+        confRingDim = 0;
+      }
+      printRing(confRingDim);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printOmniPort(byte confOmniPort) {
+  lcd.setCursor(5,1);
+  lcd.print(F("           "));
+  lcd.setCursor(5,1);
+  switch (confOmniPort) {
+    case 0:
+      lcd.print(F("None"));
+      break;
+    case 1:
+      lcd.print(F("Expression"));
+      break;
+    case 2:
+      lcd.print(F("FxdSwitch1"));
+      break;
+    case 3:
+      lcd.print(F("FxdSwitch2"));
+      break;
+  }
+}
+
+void confMenuOmniPort1() {
+  byte confOmniPort1 = EEPROM[4];
+  lcd.setCursor(0,1);
+  lcd.print(F("OP1: "));
+  printOmniPort(confOmniPort1);
+  checkMenuButtonRelease();
+
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confOmniPort1 != EEPROM[4]) {
+        EEPROM[4] = confOmniPort1;
+        port1Type = confOmniPort1;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confOmniPort1 > 0) {
+        confOmniPort1 -= 1;
+      } else {
+        confOmniPort1 = 3;
+      }
+      printOmniPort(confOmniPort1);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confOmniPort1 < 3) {
+        confOmniPort1 += 1;
+      } else {
+        confOmniPort1 = 0;
+      }
+      printOmniPort(confOmniPort1);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void confMenuOmniPort2() {
+  byte confOmniPort2 = EEPROM[5];
+  lcd.setCursor(0,1);
+  lcd.print(F("OP2: "));
+  printOmniPort(confOmniPort2);
+  checkMenuButtonRelease();
+
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confOmniPort2 != EEPROM[5]) {
+        EEPROM[5] = confOmniPort2;
+        port2Type = confOmniPort2;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confOmniPort2 > 0) {
+        confOmniPort2 -= 1;
+      } else {
+        confOmniPort2 = 3;
+      }
+      printOmniPort(confOmniPort2);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confOmniPort2 < 3) {
+        confOmniPort2 += 1;
+      } else {
+        confOmniPort2 = 0;
+      }
+      printOmniPort(confOmniPort2);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printNotificationTime(byte confNotificationTime) {
+  lcd.setCursor(8,1);
+  lcd.print(F("        "));
+  lcd.setCursor(9,1);
+  lcd.print(confNotificationTime * 10);
+}
+
+void confMenuNotificationTime() {
+  byte confNotificationTime = EEPROM[3];
+  lcd.setCursor(0,1);
+  lcd.print(F("N Time: "));
+  printNotificationTime(confNotificationTime);
+  checkMenuButtonRelease();
+
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confNotificationTime != EEPROM[3]) {
+        EEPROM[3] = confNotificationTime;
+        notificationTime = confNotificationTime * 10;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confNotificationTime > 0) {
+        confNotificationTime -= 5;
+      } else {
+        confNotificationTime = 100;
+      }
+      printNotificationTime(confNotificationTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confNotificationTime < 100) {
+        confNotificationTime += 5;
+      } else {
+        confNotificationTime = 0;
+      }
+      printNotificationTime(confNotificationTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printLongPressTime(byte confLongPressTime) {
+  lcd.setCursor(9,1);
+  lcd.print(F("       "));
+  lcd.setCursor(9,1);
+  lcd.print(confLongPressTime * 10);
+}
+
+void confMenuLongPressTime() {
+  byte confLongPressTime = EEPROM[2];
+  lcd.setCursor(0,1);
+  lcd.print(F("LP Time: "));
+  printLongPressTime(confLongPressTime);
+  checkMenuButtonRelease();
+  
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confLongPressTime != EEPROM[2]) {
+        EEPROM[2] = confLongPressTime;
+        longPressTime = confLongPressTime * 10;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confLongPressTime > 10) {
+        confLongPressTime -= 5;
+      } else {
+        confLongPressTime = 120;
+      }
+      printLongPressTime(confLongPressTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confLongPressTime < 120) {
+        confLongPressTime += 5;
+      } else {
+        confLongPressTime = 10;
+      }
+      printLongPressTime(confLongPressTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printDebounceTime(byte confDebounceTime) {
+  lcd.setCursor(11,1);
+  lcd.print(F("     "));
+  lcd.setCursor(11,1);
+  lcd.print(confDebounceTime * 10);
+}
+
+void confMenuDebounceTime() {
+  byte confDebounceTime = EEPROM[1];
+  lcd.setCursor(0,1);
+  lcd.print(F("Dbnc Time: "));
+  printDebounceTime(confDebounceTime);
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      if (confDebounceTime != EEPROM[1]) {
+        EEPROM[1] = confDebounceTime;
+        debounceTime = confDebounceTime * 10;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confDebounceTime > 5) {
+        confDebounceTime -= 1;
+      } else {
+        confDebounceTime = 30;
+      }
+      printDebounceTime(confDebounceTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confDebounceTime < 30) {
+        confDebounceTime += 1;
+      } else {
+        confDebounceTime = 5;
+      }
+      printDebounceTime(confDebounceTime);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
 }
