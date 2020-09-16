@@ -12,12 +12,15 @@
 #define prev_button 3
 #define next_button 4
 #define exit_button 5
+#define OMNIPORT_NUMBER 2
+#define EXP_TYPE 1
+#define FXD1_SWITCH_TYPE 2
+#define FXD2_SWITCH_TYPE 3
 
 
 // Settings
 boolean sendMIDIMonitor = false;
-byte port1Type;
-byte port2Type;
+byte portType[OMNIPORT_NUMBER];
 byte ringBright;
 byte ringDim;
 boolean editMode = false;
@@ -25,6 +28,8 @@ unsigned int debounceTime;
 unsigned int longPressTime;
 unsigned int notificationTime;
 unsigned long pressedTime  = 0;
+short expDown[OMNIPORT_NUMBER];
+short expUp[OMNIPORT_NUMBER];
 char presetsName[16] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'};
 
 
@@ -38,9 +43,35 @@ byte i2cStat;
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
 
 
+// Expression Pedals
+const short POT_THRESHOLD = 7;        // Threshold amount to guard against false values
+
 // LCD
 LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); 
 
+
+// Colors
+struct Color
+{
+  byte r;
+  byte g;
+  byte b;
+};
+
+struct Color colors[] = {
+  {0,0,0},        // 0 - Black
+  {255,0,0},      // 1 - Red
+  {255,165,0},    // 2 - Orange
+  {255,255,0},    // 3 - Yellow
+  {0,255,0},      // 4 - Green
+  {0,0,255},      // 5 - Blue
+  {0,191,255},    // 6 - Cyan
+  {128,0,128},    // 7 - Purple
+  {255,255,255},  // 8 - White
+  {255,105,180},  // 9 - Pink
+  {0,139,139},    // 10 - Turquoise
+  {173,255,47}    // 11 - Lime
+};
 
 // Data
 byte bankNumber;
@@ -128,10 +159,16 @@ void setup() {
   debounceTime = EEPROM[1] * 10;
   longPressTime =  EEPROM[2] * 10;
   notificationTime =  EEPROM[3] * 10;
-  port1Type = EEPROM[4];
-  port2Type = EEPROM[5];
-  ringBright = EEPROM[6];
-  ringDim = EEPROM[7];
+  ringBright = EEPROM[4];
+  ringDim = EEPROM[5];
+  for(int i=0; i<OMNIPORT_NUMBER; i++){
+    EEPROM.get((6+i),portType[i]);
+  }
+  for(int i=0; i<OMNIPORT_NUMBER; i++){
+    EEPROM.get(10+(4*i),expDown[i]);
+    EEPROM.get((10+(4*i))+2,expUp[i]);
+  }
+  
   bankNumber = EEPROM[0];
   pageNumber = 1;
   buttonNumber = 1;
@@ -146,6 +183,52 @@ void setup() {
 void loop() {
   usbMIDI.read();
   checkButtons();
+  checkOmniPorts();
+}
+
+void checkOmniPorts() {
+  for(int i=0; i<OMNIPORT_NUMBER; i++){
+    if (portType[i] == EXP_TYPE) {
+      checkExp(i);
+    }
+  }
+}
+
+void checkExp(byte pedalNumber) {
+  static short s_nLastPotValue[OMNIPORT_NUMBER];
+  static short s_nLastMappedValue[OMNIPORT_NUMBER];
+
+  short nCurrentPotValue = analogRead(pedalNumber);
+  if(abs(nCurrentPotValue - s_nLastPotValue[pedalNumber]) < POT_THRESHOLD)
+      return;
+  s_nLastPotValue[pedalNumber] = nCurrentPotValue;
+
+  short nMappedValue = map(nCurrentPotValue, expDown[pedalNumber], expUp[pedalNumber], 0, 127); // Map the value to 0-127
+  
+  if(nMappedValue < 0 || nMappedValue > 127 || nMappedValue == s_nLastMappedValue[pedalNumber])
+      return;
+  s_nLastMappedValue[pedalNumber] = nMappedValue;
+
+  short percentValue = map(nMappedValue, 0, 127, 0, 100);
+  lcd.setCursor(15,1);
+  lcd.print(F("%"));
+  if (percentValue < 10) {
+    lcd.setCursor(12,1);
+    lcd.print(F("  "));
+    lcd.setCursor(14,1);
+    lcd.print(percentValue);
+  } else if (percentValue >= 10 && percentValue < 100) {
+    lcd.setCursor(12,1);
+    lcd.print(F(" "));
+    lcd.setCursor(13,1);
+    lcd.print(percentValue);
+  } else {
+    lcd.setCursor(12,1);
+    lcd.print(percentValue);
+  }
+  //lcd.setCursor(9,1);
+  //lcd.print(nCurrentPotValue);
+  //MidiVolume(MIDI_CHANNEL, nMappedValue);
 }
 
 void checkButtons() {
@@ -477,7 +560,7 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
     int presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
     lcd.clear();
     lcd.setCursor(0,0);
-    lcd.print(F("Recieving data.."));
+    lcd.print(F("Communicating..."));
   
     switch (readData[1]) {
       // Save Preset Data
@@ -551,20 +634,21 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
       case 6:
         sizeOfData = 10;
         if (sizeofsysex == sizeOfData) {
-          EEPROM[1] = readData[2];
+          EEPROM.update(1, readData[2]);
           debounceTime = readData[2] * 10;
-          EEPROM[2] = readData[3];
+          EEPROM.update(2, readData[3]);
           longPressTime = readData[3] * 10;
-          EEPROM[3] = readData[4];
+          EEPROM.update(3, readData[4]);
           notificationTime = readData[4] * 10;
-          EEPROM[4] = readData[5];
-          port1Type =  readData[5];
-          EEPROM[5] = readData[6];
-          port2Type =  readData[6];
-          EEPROM[6] = readData[7];
-          ringBright =  readData[7];
-          EEPROM[7] = readData[8];
-          ringDim =  readData[8];
+          EEPROM.update(4, readData[5]);
+          ringBright =  readData[5];
+          EEPROM.update(5, readData[6]);
+          ringDim =  readData[6];
+          EEPROM.update(6, readData[7]);
+          portType[0] =  readData[7];
+          EEPROM.update(7, readData[8]);
+          portType[1] =  readData[8];
+          
           lcd.setCursor(0,0);
           lcd.print(F("Saved Settings  "));
           delay(500);
@@ -727,9 +811,10 @@ void confMenu() {
     } else if(checkMenuButton(6)){
       switch (page) {
         case 1:
-          confMenuOmniPort1();
+          confMenuOmniPort(0);
           break;
         case 2:
+          confCalibrateExpDown(0);
           break;
       }
       showConfMenu(page);
@@ -738,9 +823,10 @@ void confMenu() {
     } else if(checkMenuButton(7)){
       switch (page) {
         case 1:
-          confMenuOmniPort2();
+          confMenuOmniPort(1);
           break;
         case 2:
+          confCalibrateExpDown(1);
           break;
       }
       showConfMenu(page);
@@ -763,6 +849,94 @@ void confMenu() {
   }
 }
 
+void printCalibrateExp(short confCalibrateExp) {
+  if (confCalibrateExp < 10) {
+    lcd.setCursor(12,1);
+    lcd.print(F("    "));
+    lcd.setCursor(11,1);
+    lcd.print(confCalibrateExp);
+  } else if (confCalibrateExp < 100) {
+    lcd.setCursor(13,1);
+    lcd.print(F("   "));
+    lcd.setCursor(11,1);
+    lcd.print(confCalibrateExp);
+  } else if (confCalibrateExp < 1000) {
+    lcd.setCursor(14,1);
+    lcd.print(F("  "));
+    lcd.setCursor(11,1);
+    lcd.print(confCalibrateExp);
+  } else {
+    lcd.setCursor(15,1);
+    lcd.print(F(" "));
+    lcd.setCursor(11,1);
+    lcd.print(confCalibrateExp);
+  }
+}
+
+void confCalibrateExpDown(byte pedalNumber) {
+  short confCalibrateExpDown;
+  EEPROM.get(10+(4*pedalNumber),confCalibrateExpDown);
+  short nCurrentPotValueTemp = analogRead(pedalNumber);
+  lcd.setCursor(0,1);
+  lcd.print(F("Exp  Down: "));
+  lcd.setCursor(3,1);
+  lcd.print(pedalNumber+1);
+  printCalibrateExp(confCalibrateExpDown);
+  checkMenuButtonRelease();
+  while (true) {
+    short nCurrentPotValue = analogRead(pedalNumber);
+    if(abs(nCurrentPotValue - nCurrentPotValueTemp) > POT_THRESHOLD) {
+      confCalibrateExpDown = nCurrentPotValue;
+      printCalibrateExp(confCalibrateExpDown);
+      nCurrentPotValueTemp = nCurrentPotValue;
+    }
+    if(checkMenuButton(save_button)){
+      if (expDown[pedalNumber] != confCalibrateExpDown) {
+        EEPROM.put(10+(4*pedalNumber),confCalibrateExpDown);
+        expDown[pedalNumber] = confCalibrateExpDown;
+      }
+      confCalibrateExpUp(pedalNumber);
+      return;
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void confCalibrateExpUp(byte pedalNumber) {
+  short confCalibrateExpUp;
+  EEPROM.get((10+(4*pedalNumber))+2,confCalibrateExpUp);
+  short nCurrentPotValueTemp = analogRead(pedalNumber);
+  lcd.setCursor(0,1);
+  lcd.print(F("Exp  Up: "));
+  lcd.setCursor(3,1);
+  lcd.print(pedalNumber+1);
+  printCalibrateExp(confCalibrateExpUp);
+  checkMenuButtonRelease();
+  while (true) {
+    short nCurrentPotValue = analogRead(pedalNumber);
+    if(abs(nCurrentPotValue - nCurrentPotValueTemp) > POT_THRESHOLD) {
+      confCalibrateExpUp = nCurrentPotValue;
+      printCalibrateExp(confCalibrateExpUp);
+      nCurrentPotValueTemp = nCurrentPotValue;
+    }
+    if(checkMenuButton(save_button)){
+      if (expUp[pedalNumber] != confCalibrateExpUp) {
+        EEPROM.put((10+(4*pedalNumber))+2,confCalibrateExpUp);
+        expUp[pedalNumber] = confCalibrateExpUp;
+      }
+      lcd.setCursor(0,1);
+      lcd.print(F("                "));
+      lcd.setCursor(0,1);
+      lcd.print(F("Saved"));
+      delay(800);
+      return;
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
 void printRing(byte confRing) {
   lcd.setCursor(10,1);
   lcd.print(F("      "));
@@ -771,17 +945,15 @@ void printRing(byte confRing) {
 }
 
 void confMenuRingBright() {
-  byte confRingBright = EEPROM[6];
+  byte confRingBright = EEPROM[4];
   lcd.setCursor(0,1);
   lcd.print(F("Ring brt: "));
   printRing(confRingBright);
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confRingBright != EEPROM[6]) {
-        EEPROM[6] = confRingBright;
-        ringBright = confRingBright;
-      }
+      EEPROM.update(6, confRingBright);
+      ringBright = confRingBright;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -811,17 +983,15 @@ void confMenuRingBright() {
 }
 
 void confMenuRingDim() {
-  byte confRingDim = EEPROM[7];
+  byte confRingDim = EEPROM[5];
   lcd.setCursor(0,1);
   lcd.print(F("Ring dim: "));
   printRing(confRingDim);
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confRingDim != EEPROM[7]) {
-        EEPROM[7] = confRingDim;
-        ringDim = confRingDim;
-      }
+      EEPROM.update(7, confRingDim);
+      ringDim = confRingDim;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -869,20 +1039,19 @@ void printOmniPort(byte confOmniPort) {
       break;
   }
 }
-
-void confMenuOmniPort1() {
-  byte confOmniPort1 = EEPROM[4];
+void confMenuOmniPort(byte portNumber) {
+  byte confOmniPort = EEPROM[6+portNumber];
   lcd.setCursor(0,1);
-  lcd.print(F("OP1: "));
-  printOmniPort(confOmniPort1);
+  lcd.print(F("OP : "));
+  lcd.setCursor(2,1);
+  lcd.print(portNumber+1);
+  printOmniPort(confOmniPort);
   checkMenuButtonRelease();
 
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confOmniPort1 != EEPROM[4]) {
-        EEPROM[4] = confOmniPort1;
-        port1Type = confOmniPort1;
-      }
+      EEPROM.update(6+portNumber, confOmniPort);
+      portType[portNumber] = confOmniPort;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -890,29 +1059,29 @@ void confMenuOmniPort1() {
       delay(800);
       return;
     } else if(checkMenuButton(prev_button)){
-      if (confOmniPort1 > 0) {
-        confOmniPort1 -= 1;
+      if (confOmniPort > 0) {
+        confOmniPort -= 1;
       } else {
-        confOmniPort1 = 3;
+        confOmniPort = 3;
       }
-      printOmniPort(confOmniPort1);
+      printOmniPort(confOmniPort);
       checkMenuButtonRelease();
     } else if(checkMenuButton(next_button)){
-      if (confOmniPort1 < 3) {
-        confOmniPort1 += 1;
+      if (confOmniPort < 3) {
+        confOmniPort += 1;
       } else {
-        confOmniPort1 = 0;
+        confOmniPort = 0;
       }
-      printOmniPort(confOmniPort1);
+      printOmniPort(confOmniPort);
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
     }
   }
 }
-
+/*
 void confMenuOmniPort2() {
-  byte confOmniPort2 = EEPROM[5];
+  byte confOmniPort2 = EEPROM[7];
   lcd.setCursor(0,1);
   lcd.print(F("OP2: "));
   printOmniPort(confOmniPort2);
@@ -920,10 +1089,8 @@ void confMenuOmniPort2() {
 
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confOmniPort2 != EEPROM[5]) {
-        EEPROM[5] = confOmniPort2;
-        port2Type = confOmniPort2;
-      }
+      EEPROM.update(7, confOmniPort2);
+      portType[1] = confOmniPort2;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -951,7 +1118,7 @@ void confMenuOmniPort2() {
     }
   }
 }
-
+*/
 void printNotificationTime(byte confNotificationTime) {
   lcd.setCursor(8,1);
   lcd.print(F("        "));
@@ -968,10 +1135,8 @@ void confMenuNotificationTime() {
 
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confNotificationTime != EEPROM[3]) {
-        EEPROM[3] = confNotificationTime;
-        notificationTime = confNotificationTime * 10;
-      }
+      EEPROM.update(3, confNotificationTime);
+      notificationTime = confNotificationTime * 10;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -1016,10 +1181,8 @@ void confMenuLongPressTime() {
   
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confLongPressTime != EEPROM[2]) {
-        EEPROM[2] = confLongPressTime;
-        longPressTime = confLongPressTime * 10;
-      }
+      EEPROM.update(2, confLongPressTime);
+      longPressTime = confLongPressTime * 10;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
@@ -1063,10 +1226,8 @@ void confMenuDebounceTime() {
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
-      if (confDebounceTime != EEPROM[1]) {
-        EEPROM[1] = confDebounceTime;
-        debounceTime = confDebounceTime * 10;
-      }
+      EEPROM.update(1, confDebounceTime);
+      debounceTime = confDebounceTime * 10;
       lcd.setCursor(0,1);
       lcd.print(F("                "));
       lcd.setCursor(0,1);
