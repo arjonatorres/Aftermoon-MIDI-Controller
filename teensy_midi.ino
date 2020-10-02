@@ -1,3 +1,4 @@
+#include <Adafruit_NeoPixel.h>
 #include <MIDI.h>
 #include <EEPROM.h>
 #include <Wire.h> 
@@ -49,6 +50,8 @@ const short POT_THRESHOLD = 7;        // Threshold amount to guard against false
 // LCD
 LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); 
 
+// Neopixels
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(64, 12, NEO_GRB + NEO_KHZ800);
 
 // Colors
 struct Color
@@ -77,6 +80,9 @@ struct Color colors[] = {
 byte bankNumber;
 byte pageNumber;
 byte buttonNumber;
+byte presetBankNumber;
+byte presetPageNumber;
+byte presetButtonNumber;
 
 // Messages
 struct Msg
@@ -84,6 +90,11 @@ struct Msg
     byte action;
     byte type;
     byte pos;
+    byte value[n_values];
+  };
+struct ExpMsg
+  {
+    byte type;
     byte value[n_values];
   };
 struct Preset
@@ -103,7 +114,8 @@ struct Page
   };
 struct OmniPort
   {
-    struct Msg message[n_messages];
+    char shortName[9] = "EXP";
+    struct ExpMsg message[n_messages];
   };
 struct Bank
   {
@@ -172,11 +184,17 @@ void setup() {
   bankNumber = EEPROM[0];
   pageNumber = 1;
   buttonNumber = 1;
+  presetBankNumber = 0;
+  presetPageNumber = 0;
+  presetButtonNumber = 0;
 
   myEEPROM.read(0,(byte*)&data, sizeof(data));
   //myEEPROM.write(0,(byte*)&data, sizeof(data));
   usbMIDI.setHandleSystemExclusive(OnSysEx);
 
+  pixels.begin();
+  pixels.setBrightness(32);
+  drawColors();
   lcdBankButton();
 }
 
@@ -184,6 +202,55 @@ void loop() {
   usbMIDI.read();
   checkButtons();
   checkOmniPorts();
+}
+
+void drawColors() {
+  for(int i=0; i<8; i++){
+    byte r;
+    byte g;
+    byte b;
+    byte presetType = 0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf);
+    int colorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].color);
+    byte colorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].color, 6);
+    r = colors[colorNumber].r;
+    g = colors[colorNumber].g;
+    b = colors[colorNumber].b;
+    
+    if (presetType == 0) {
+      if (bankNumber == presetBankNumber && pageNumber == presetPageNumber && (i+1) == presetButtonNumber) {
+        for(int j=0; j<8; j++){
+          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+        }
+      } else {
+        if (colorType == 0) {
+          for(int j=0; j<8; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+          }
+        } else {
+          for(int j=0; j<8; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+          }
+        }
+      }
+    } else if (presetType == 1){
+      if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posSingle == 0) {
+        if (colorType == 0) {
+          for(int j=0; j<8; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+          }
+        } else {
+          for(int j=0; j<8; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+          }
+        }
+      } else {
+        for(int j=0; j<8; j++){
+          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+        }
+      }
+    }
+  }
+  pixels.show();
 }
 
 void checkOmniPorts() {
@@ -208,7 +275,11 @@ void checkExp(byte pedalNumber) {
   if(nMappedValue < 0 || nMappedValue > 127 || nMappedValue == s_nLastMappedValue[pedalNumber])
       return;
   s_nLastMappedValue[pedalNumber] = nMappedValue;
-
+  
+  if (editMode) {
+    sendUSBExpData(pedalNumber);
+  }
+  
   short percentValue = map(nMappedValue, 0, 127, 0, 100);
   lcd.setCursor(15,1);
   lcd.print(F("%"));
@@ -226,6 +297,41 @@ void checkExp(byte pedalNumber) {
     lcd.setCursor(12,1);
     lcd.print(percentValue);
   }
+  // Send MIDI Msg
+  for (byte i=0; i < n_messages; i++) {
+    switch (data.bank[bankNumber-1].port[pedalNumber].message[i].type) {
+      // Expression CC
+      case 1:
+        {
+          byte minValue = data.bank[bankNumber-1].port[pedalNumber].message[i].value[1];
+          byte maxValue = data.bank[bankNumber-1].port[pedalNumber].message[i].value[2];
+          byte mapValue = map(nMappedValue, 0, 127, minValue, maxValue);
+          MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], mapValue, data.bank[bankNumber-1].port[pedalNumber].message[i].value[3]);
+          if (sendMIDIMonitor && editMode) {
+            usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], mapValue, data.bank[bankNumber-1].port[pedalNumber].message[i].value[3]);
+          }
+        }
+        break;
+      // CC Down
+      case 2:
+        if (nMappedValue == 0) {
+          MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
+          if (sendMIDIMonitor && editMode) {
+            usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
+          }
+        }
+        break;
+      // CC Up
+      case 3:
+        if (nMappedValue == 127) {
+          MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
+          if (sendMIDIMonitor && editMode) {
+            usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
+          }
+        }
+        break;
+    }
+  }
   //lcd.setCursor(9,1);
   //lcd.print(nCurrentPotValue);
   //MidiVolume(MIDI_CHANNEL, nMappedValue);
@@ -241,15 +347,18 @@ void checkButtons() {
         if (digitalRead(2)== HIGH && digitalRead(3)== HIGH) {
           pageNumber = 1;
           bankDown();
+          drawColors();
           checkMenuButtonRelease();
         // B+C check (Toggle Page)
         } else if (digitalRead(3)== HIGH && digitalRead(4)== HIGH) {
           togglePag();
+          drawColors();
           checkMenuButtonRelease();
         // C+D check (Bank Up)
         } else if (digitalRead(4)== HIGH && digitalRead(5)== HIGH) {
           pageNumber = 1;
           bankUp();
+          drawColors();
           checkMenuButtonRelease();
         // D+E check (Web Editor Mode)
         } else if (digitalRead(5)== HIGH && digitalRead(6)== HIGH) {
@@ -272,10 +381,13 @@ void checkButtons() {
         // E+H check (Edit Menu)
         } else if (digitalRead(6)== HIGH && digitalRead(9)== HIGH) {
           if (!editMode) {
+            pixels.clear();
+            pixels.show();
             showConfMenu(1);
             checkMenuButtonRelease();
             confMenu();
             lcdBankButton();
+            drawColors();
             checkMenuButtonRelease();
           } else {
             lcd.clear();
@@ -290,9 +402,9 @@ void checkButtons() {
           btnPressed(i);
           // Trigger Release All Action
           checkMsg(9);
+          drawColors();
           lcdBankButton();
         }
-        
       }
     }
   }
@@ -331,6 +443,11 @@ void btnPressed(byte i) {
     }
     // Release
     if (digitalRead(i)== LOW) {
+      if ((0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf)) == 0) {
+        presetBankNumber = bankNumber;
+        presetPageNumber = pageNumber;
+        presetButtonNumber = buttonNumber;
+      }
       // Trigger Release Action
       checkMsg(2);
       // Change Toggle
@@ -381,7 +498,7 @@ void sendMIDIMessage(byte i) {
         usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
       }
       break;
-    // Program Change
+    // Control Change
     case 2:
       MIDI.sendControlChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       if (sendMIDIMonitor && editMode) {
@@ -552,6 +669,16 @@ void sendSettingsData() {
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
+void sendUSBExpData(byte pedalNumber) {
+  byte dataStart[] = { 0xF0, 0x08 };
+  byte dataEnd[] = { 0xF7 };
+  usbMIDI.sendSysEx(2, dataStart, true);
+  usbMIDI.sendSysEx(sizeof(bankNumber), (byte*)&bankNumber, true);
+  usbMIDI.sendSysEx(sizeof(pedalNumber), (byte*)&pedalNumber, true);
+  usbMIDI.sendSysEx(sizeof(data.bank[bankNumber-1].port[pedalNumber]), (byte*)&data.bank[bankNumber-1].port[pedalNumber], true);  
+  usbMIDI.sendSysEx(1, dataEnd, true);
+}
+
 void OnSysEx(byte* readData, unsigned sizeofsysex) {
   if (editMode) {
     sendMIDIMonitor = false;
@@ -657,6 +784,28 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
       // MIDI Monitor
       case 7:
         sendMIDIMonitor = true;
+        break;
+       // Save Exp Data
+      case 8:
+        sizeOfData = sizeof(struct OmniPort) + 5;
+        if (sizeofsysex == sizeOfData) {
+          bankNumber = readData[2];
+          byte expNumber = readData[3];
+          int expOffset = (sizeof(data.bank[bankNumber-1].bankName)) + (2*(sizeof(data.bank[bankNumber-1].page[0]))) + ((expNumber)*(sizeof(data.bank[bankNumber-1].port[expNumber])));
+          // Guardado en memoria
+          memcpy(&data.bank[bankNumber-1].port[expNumber], &readData[4], sizeof(data.bank[bankNumber-1].port[expNumber]));
+          // Guardado en EEPROM
+          i2cStat = myEEPROM.write((bankOffset + expOffset),(byte*)&readData[4], sizeof(data.bank[bankNumber-1].port[expNumber]));
+          if ( i2cStat != 0 ) {
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print(F("EEPROM w error  "));
+            while (true) {}
+          }
+          lcd.setCursor(0,0);
+          lcd.print(F("Saved Expression"));
+          delay(500);
+        }
         break;
     }
     delay(300);
@@ -1079,46 +1228,7 @@ void confMenuOmniPort(byte portNumber) {
     }
   }
 }
-/*
-void confMenuOmniPort2() {
-  byte confOmniPort2 = EEPROM[7];
-  lcd.setCursor(0,1);
-  lcd.print(F("OP2: "));
-  printOmniPort(confOmniPort2);
-  checkMenuButtonRelease();
 
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(7, confOmniPort2);
-      portType[1] = confOmniPort2;
-      lcd.setCursor(0,1);
-      lcd.print(F("                "));
-      lcd.setCursor(0,1);
-      lcd.print(F("Saved"));
-      delay(800);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confOmniPort2 > 0) {
-        confOmniPort2 -= 1;
-      } else {
-        confOmniPort2 = 3;
-      }
-      printOmniPort(confOmniPort2);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confOmniPort2 < 3) {
-        confOmniPort2 += 1;
-      } else {
-        confOmniPort2 = 0;
-      }
-      printOmniPort(confOmniPort2);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-*/
 void printNotificationTime(byte confNotificationTime) {
   lcd.setCursor(8,1);
   lcd.print(F("        "));
