@@ -9,6 +9,7 @@
 #define n_presets 8
 #define n_banks 12
 #define n_values 4
+#define file_div_size 200
 #define save_button 2
 #define prev_button 3
 #define next_button 4
@@ -85,6 +86,7 @@ byte buttonNumber;
 byte presetBankNumber;
 byte presetPageNumber;
 byte presetButtonNumber;
+byte presetSPNumber;      // 0 Si el preset es SP, 1 si es LP
 
 // Messages
 struct Msg
@@ -101,13 +103,14 @@ struct ExpMsg
   };
 struct Preset
   {
-    byte presetConf;                  // Bit 6 - lpToggleMode, Bit 5 - spToggleMode, Bit 4-0 Preset Type
+    byte presetConf;                  // Bit 6 - lpToggleMode, Bit 5 - spToggleMode, Bit 1 lp Preset Type, Bit 0 sp Preset Type
     char longName[25] = "EMPTY";
     char pShortName[9] = "EMPTY";
     char pToggleName[9] = "EMPTY";
     char lpShortName[9] = "EMPTY";
     char lpToggleName[9] = "EMPTY";
-    byte color;                       // Bit 6 - Color type (Off, Dimmer), Bit 5-0 color
+    byte spColor;                       // Bit 6 - Color type (Off, Dimmer), Bit 5-0 color
+    byte lpColor;                       // Bit 6 - Color type (Off, Dimmer), Bit 5-0 color
     struct Msg message[n_messages];
   };
 struct Page
@@ -167,6 +170,26 @@ void setup() {
     while (true) {}
   }
 
+  // Info Menú
+  // A+D check (Info Menu)
+  if (digitalRead(2)== HIGH && digitalRead(5)== HIGH) {
+    showInfoMenu();
+    checkMenuButtonRelease();
+    infoMenu();
+    checkMenuButtonRelease();
+    lcd.clear();
+  }
+
+  // Factory Reset
+  // E+H check (Factory Menu)
+  if (digitalRead(6)== HIGH && digitalRead(9)== HIGH) {
+    showFactoryMenu();
+    checkMenuButtonRelease();
+    factoryMenu();
+    checkMenuButtonRelease();
+    lcd.clear();
+  }
+
   // EEPROM
   debounceTime = EEPROM[1] * 10;
   longPressTime =  EEPROM[2] * 10;
@@ -187,13 +210,18 @@ void setup() {
   presetBankNumber = 0;
   presetPageNumber = 0;
   presetButtonNumber = 0;
+  presetSPNumber = 0;
 
   myEEPROM.read(0,(byte*)&data, sizeof(data));
   //myEEPROM.write(0,(byte*)&data, sizeof(data));
   usbMIDI.setHandleSystemExclusive(OnSysEx);
 
   pixels.begin();
-  pixels.setBrightness(32);
+  if (EEPROM[30] == 0) {
+    pixels.setBrightness(0);
+  } else {
+    pixels.setBrightness((EEPROM[30]*32)-1);
+  }
   drawColors();
   lcdChangeAll();
 }
@@ -206,48 +234,124 @@ void loop() {
 
 void drawColors() {
   for(int i=0; i<8; i++){
+    // SP Colors
     byte r;
     byte g;
     byte b;
-    byte presetType = 0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf);
-    int colorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].color);
-    byte colorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].color, 6);
-    r = colors[colorNumber].r;
-    g = colors[colorNumber].g;
-    b = colors[colorNumber].b;
+    byte spPresetType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf, 0);
+    int spColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor);
+    int lpColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor);
+    byte spColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor, 6);
+    r = colors[spColorNumber].r;
+    g = colors[spColorNumber].g;
+    b = colors[spColorNumber].b;
     
-    if (presetType == 0) {
-      if (bankNumber == presetBankNumber && pageNumber == presetPageNumber && (i+1) == presetButtonNumber) {
-        for(int j=0; j<8; j+=2){
-          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
-        }
-      } else {
-        if (colorType == 0) {
-          for(int j=0; j<8; j+=2){
-            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
-          }
-        } else {
-          for(int j=0; j<8; j+=2){
-            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
-          }
-        }
-      }
-    } else if (presetType == 1){
+    if (spPresetType == 0){
       if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posSingle == 0) {
-        if (colorType == 0) {
-          for(int j=0; j<8; j+=2){
+        if (spColorType == 0) {
+          for(int j=0; j<3; j++){
             pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
           }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          }
         } else {
-          for(int j=0; j<8; j+=2){
+          for(int j=0; j<3; j++){
             pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
           }
         }
       } else {
-        for(int j=0; j<8; j+=2){
+        for(int j=0; j<3; j++){
           pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
         }
+        if (lpColorNumber == 0) {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        }
       }
+    } else if (spPresetType == 1) {
+      if (bankNumber == presetBankNumber && pageNumber == presetPageNumber && (i+1) == presetButtonNumber && presetSPNumber == 0) {
+        for(int j=0; j<3; j++){
+          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+        }
+        if (lpColorNumber == 0) {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        }
+      } else {
+        if (spColorType == 0) {
+          for(int j=0; j<3; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          }
+        } else {
+          for(int j=0; j<3; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+          }
+        }
+      }
+    }
+    if (lpColorNumber != 0) {
+      byte lpPresetType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf, 1);
+      byte lpColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor, 6);
+      r = colors[lpColorNumber-1].r;
+      g = colors[lpColorNumber-1].g;
+      b = colors[lpColorNumber-1].b;
+
+
+      if (lpPresetType == 0){
+        if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posLong == 0) {
+          if (lpColorType == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          } else {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+          }
+        } else {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        }
+      } else if (lpPresetType == 1) {
+        if (bankNumber == presetBankNumber && pageNumber == presetPageNumber && (i+1) == presetButtonNumber && presetSPNumber == 1) {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        } else {
+          if (lpColorType == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          } else {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+          }
+        }
+      }
+
+      
     }
   }
   pixels.show();
@@ -392,13 +496,13 @@ void checkButtons() {
           // Trigger Release All Action
           checkMsg(9);
           drawColors();
-          byte presetType = 0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i-2].presetConf);
-          if (presetType == 0) {
-            lcdPreset();
+          //byte presetType = 0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i-2].presetConf);
+          //if (presetType == 0) {
+            //lcdPreset();
             lcdPresetNames();
-          } else {
-            lcdPresetNames();
-          }
+          //} else {
+          //  lcdPresetNames();
+          //}
         }
       }
     }
@@ -407,41 +511,64 @@ void checkButtons() {
 
 void btnPressed(byte i) {
   buttonNumber = i-1;
-  
+  bool haveLPMsg = checkLPMsg();
   if (editMode) {
     sendUSBPresetData();
   }
   // Trigger Press Action
   checkMsg(1);
+
+  if (haveLPMsg) {
+    if (buttonNumber <= 4) {
+      lcd.setCursor(((buttonNumber-1)*10),3);
+    } else {
+      lcd.setCursor(((buttonNumber-1)*10),0);
+    }
+    if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0 || (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 0) ) {
+      printPresetPos(buttonNumber, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpShortName);
+    } else {
+      printPresetPos(buttonNumber, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpToggleName);
+    }
+  }
   
   while (true) {
     // Long Press
     if ((millis() - pressedTime) > longPressTime) {
       // Trigger Long Press Action
       checkMsg(3);
-
+      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 1) == 1) {
+        presetBankNumber = bankNumber;
+        presetPageNumber = pageNumber;
+        presetButtonNumber = buttonNumber;
+        presetSPNumber = 1;
+        lcdPreset();
+      }
+      // Change Toggle
+      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 1) {
+        if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0) {
+          posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong = 1;
+        } else {
+          posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong = 0;
+        }
+      }
+      drawColors();
+      
       while (true) {
         if (digitalRead(i)== LOW) {
           // Trigger Long Press Release Action
           checkMsg(4);
-          // Change Toggle
-          if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 1) {
-            if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0) {
-              posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong = 1;
-            } else {
-              posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong = 0;
-            }
-          }
           return;
         }
       }
     }
     // Release
     if (digitalRead(i)== LOW) {
-      if ((0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf)) == 0) {
+      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 0) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
         presetButtonNumber = buttonNumber;
+        presetSPNumber = 0;
+        lcdPreset();
       }
       // Trigger Release Action
       checkMsg(2);
@@ -456,6 +583,15 @@ void btnPressed(byte i) {
       return;
     }
   }
+}
+
+bool checkLPMsg() {
+  for (byte i=0; i < n_messages; i++) {
+    if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].action == 3 || data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].action == 4) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void checkMsg(byte action) {
@@ -522,7 +658,12 @@ void sendMIDIMessage(byte i) {
     // Set Toggle Single
     case 15:
     {
-      byte actionToggle = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      byte actionToggle = 0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      byte actionBankNumber = (0b01111100&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0])) >> 2;
+      if (actionBankNumber == 0) {
+        actionBankNumber = bankNumber;
+      }
+      //byte actionToggle = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
       byte num1 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
       byte num2 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       byte num3 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[3]);
@@ -530,46 +671,46 @@ void sendMIDIMessage(byte i) {
       for(int i=0; i<7; i++){
         if (bitValue(num1, i) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
-            posData.bank[bankNumber-1].page[0].preset[i].posSingle = 1;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 1;
           } else if (actionToggle == 2) {
-            posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 0;
           }
         } else if ((bitValue(num1, i) == 0) && (actionToggle == 0)) {
-          posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
+          posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 0;
         }
       }
       for(int i=7; i<14; i++){
         if (bitValue(num2, (i-7)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             if (i < n_presets) {
-              posData.bank[bankNumber-1].page[0].preset[i].posSingle = 1;
+              posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 1;
             } else {
-              posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posSingle = 1;
+              posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posSingle = 1;
             }
           } else if (actionToggle == 2) {
             if (i < n_presets) {
-              posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
+              posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 0;
             } else {
-              posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posSingle = 0;
+              posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posSingle = 0;
             }
           }
         } else if ((bitValue(num2, (i-7)) == 0) && (actionToggle == 0)) {
           if (i < n_presets) {
-            posData.bank[bankNumber-1].page[0].preset[i].posSingle = 0;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posSingle = 0;
           } else {
-            posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posSingle = 0;
+            posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posSingle = 0;
           }
         }
       }
       for(int i=14; i<16; i++){
         if (bitValue(num3, (i-14)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
-            posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 1;
+            posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posSingle = 1;
           } else if (actionToggle == 2) {
-            posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
+            posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
           }
         } else if ((bitValue(num3, (i-14)) == 0) && (actionToggle == 0)) {
-          posData.bank[bankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
+          posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posSingle = 0;
         }
       }
       break;
@@ -577,7 +718,12 @@ void sendMIDIMessage(byte i) {
     // Set Toggle Long
     case 16:
     {
-      byte actionToggle = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      byte actionToggle = 0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      //byte actionToggle = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      byte actionBankNumber = (0b01111100&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0])) >> 2;
+      if (actionBankNumber == 0) {
+        actionBankNumber = bankNumber;
+      }
       byte num1 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
       byte num2 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       byte num3 = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[3]);
@@ -585,46 +731,46 @@ void sendMIDIMessage(byte i) {
       for(int i=0; i<7; i++){
         if (bitValue(num1, i) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
-            posData.bank[bankNumber-1].page[0].preset[i].posLong = 1;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 1;
           } else if (actionToggle == 2) {
-            posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 0;
           }
         } else if ((bitValue(num1, i) == 0) && (actionToggle == 0)) {
-          posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
+          posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 0;
         }
       }
       for(int i=7; i<14; i++){
         if (bitValue(num2, (i-7)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
             if (i < n_presets) {
-              posData.bank[bankNumber-1].page[0].preset[i].posLong = 1;
+              posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 1;
             } else {
-              posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posLong = 1;
+              posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posLong = 1;
             }
           } else if (actionToggle == 2) {
             if (i < n_presets) {
-              posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
+              posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 0;
             } else {
-              posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posLong = 0;
+              posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posLong = 0;
             }
           }
         } else if ((bitValue(num2, (i-7)) == 0) && (actionToggle == 0)) {
           if (i < n_presets) {
-            posData.bank[bankNumber-1].page[0].preset[i].posLong = 0;
+            posData.bank[actionBankNumber-1].page[0].preset[i].posLong = 0;
           } else {
-            posData.bank[bankNumber-1].page[1].preset[(i-n_presets)].posLong = 0;
+            posData.bank[actionBankNumber-1].page[1].preset[(i-n_presets)].posLong = 0;
           }
         }
       }
       for(int i=14; i<16; i++){
         if (bitValue(num3, (i-14)) == 1) {
           if ((actionToggle == 0) || (actionToggle == 1)) {
-            posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 1;
+            posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posLong = 1;
           } else if (actionToggle == 2) {
-            posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 0;
+            posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posLong = 0;
           }
         } else if ((bitValue(num3, (i-14)) == 0) && (actionToggle == 0)) {
-          posData.bank[bankNumber-1].page[1].preset[i-n_presets].posLong = 0;
+          posData.bank[actionBankNumber-1].page[1].preset[i-n_presets].posLong = 0;
         }
       }
       break;
@@ -672,6 +818,23 @@ void sendCurrentBankData() {
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
+void sendAllBanksData(byte bankNumberRx) {
+  byte dataStart[] = { 0xF0 };
+  int arraySize = sizeof(data.bank[bankNumberRx-1]) + 2;
+  byte dataMiddle[arraySize] = {};
+  dataMiddle[0] = 12;
+  dataMiddle[1] = bankNumberRx;
+  memcpy(&dataMiddle[2], (byte*)&data.bank[bankNumberRx-1], sizeof(data.bank[bankNumberRx-1]));
+  byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+  byte dataCRC[] = { checksum };
+  byte dataEnd[] = { 0xF7 };
+
+  usbMIDI.sendSysEx(1, dataStart, true);
+  usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+  usbMIDI.sendSysEx(1, dataCRC, true);
+  usbMIDI.sendSysEx(1, dataEnd, true);
+}
+
 void sendUSBBankData() {
   byte dataStart[] = { 0xF0 };
   int arraySize = sizeof(data.bank[bankNumber-1].bankName) + 1;
@@ -690,7 +853,7 @@ void sendUSBBankData() {
 
 void sendSettingsData() {
   byte dataStart[] = { 0xF0 };
-  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[6], EEPROM[7] };
+  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[30], EEPROM[6], EEPROM[7] };
   int arraySize = sizeof(eepromData) + 1;
   byte dataMiddle[arraySize] = {};
   dataMiddle[0] = 0x03;
@@ -752,11 +915,12 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
   static byte restorePaqSize = 0;
   //static struct Bank bankTemp;
   static byte bankTemp[sizeof(data.bank[bankNumber-1])];
+  static byte allBanksTemp[sizeof(data)];
+  static int allBanksCont = 0;
   if (editMode) {
     sendMIDIMonitor = false;
     int bankOffset = (bankNumber-1)*(sizeof(data.bank[bankNumber-1]));
-    int presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
-    if (readData[1] != 11) {
+    if (readData[1] != 11 && (readData[1] != 12 || (readData[1] == 12 && readData[2] == 1)) && readData[1] != 13 && readData[1] != 14) {
       printMainMsg(12, F("Communicating..."), 0);
     }
   
@@ -765,9 +929,16 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
       case 1:
         sizeOfData = sizeof(struct Preset) + 7;
         if (sizeofsysex == sizeOfData) {
+          int presetOffset;
           bankNumber = readData[2];
           pageNumber = readData[3];
           buttonNumber = readData[4];
+          if (pageNumber == 1) {
+            presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
+          } else {
+            presetOffset = (sizeof(data.bank[bankNumber-1].bankName)) + (sizeof(data.bank[bankNumber-1].page[0])) + ((buttonNumber-1)*(sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1])));
+          }
+          
           // Guardado en memoria
           memcpy(&data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1], &readData[5], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
       
@@ -822,7 +993,7 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
         break;
       // Save Settings Data
       case 6:
-        sizeOfData = 11;
+        sizeOfData = 12;
         if (sizeofsysex == sizeOfData) {
           EEPROM.update(1, readData[2]);
           debounceTime = readData[2] * 10;
@@ -834,10 +1005,17 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
           ringBright =  readData[5];
           EEPROM.update(5, readData[6]);
           ringDim =  readData[6];
-          EEPROM.update(6, readData[7]);
-          portType[0] =  readData[7];
-          EEPROM.update(7, readData[8]);
-          portType[1] =  readData[8];
+          EEPROM.update(30, readData[7]);
+          if (EEPROM[30] == 0) {
+            pixels.setBrightness(0);
+          } else {
+            pixels.setBrightness((EEPROM[30]*32)-1);
+          }
+          EEPROM.update(6, readData[8]);
+          portType[0] =  readData[8];
+          EEPROM.update(7, readData[9]);
+          portType[1] =  readData[9];
+          
 
           printMainMsg(13, F("Saved Settings"), MAIN_MSG_TIME);
         }
@@ -876,96 +1054,194 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
         break;
       // Backup Restore Current Bank
       case 11:
-        byte restoreBankContRx = readData[2];
-
-        if (restoreBankContRx == 0) {
-          restoreBankCont = restoreBankContRx;
-          restorePaqSize = readData[3];
-          lcd.clear();
-          lcd.setCursor(10,1);
-          lcd.print(F("Save data in Bank"));
-          lcd.setCursor(28,1);
-          lcd.print(bankNumber);
-          byte qNumber = 29;
-          if (bankNumber >= 10) {
-            qNumber = 30;
+        {
+          byte restoreBankContRx = readData[2];
+  
+          if (restoreBankContRx == 0) {
+            restoreBankCont = restoreBankContRx;
+            restorePaqSize = readData[3];
+            lcd.clear();
+            lcd.setCursor(10,1);
+            lcd.print(F("Save data in Bank"));
+            lcd.setCursor(28,1);
+            lcd.print(bankNumber);
+            byte qNumber = 29;
+            if (bankNumber >= 10) {
+              qNumber = 30;
+            }
+            lcd.setCursor(qNumber,1);
+            lcd.print(F("?"));
+            lcd.setCursor(0,3);
+            lcd.print(F("(  Save  )                    (  Exit  )"));
+            while (true) {
+              if(checkMenuButton(save_button)){
+                // Guardado en memoria
+                memcpy(&bankTemp, &readData[4], file_div_size);
+  
+                printMainMsg(9, F("Receiving Bank Data..."), 500);
+                restoreBankCont += 1;
+                
+                lcd.setCursor(18,2);
+                lcd.print(restoreBankCont);
+                lcd.setCursor(19,2);
+                lcd.print(F("/"));
+                lcd.setCursor(20,2);
+                lcd.print(restorePaqSize);
+                
+                sendRestoreBank(restoreBankCont);
+                return;
+              } else if(checkMenuButton(exit_button)){
+                break;
+              }
+            }
+          } else if (restoreBankContRx == restoreBankCont) {
+              if (restoreBankContRx != (restorePaqSize-1)) {
+                memcpy(&bankTemp[restoreBankContRx * file_div_size], &readData[3], file_div_size);
+                restoreBankCont += 1;
+                if (restoreBankCont < 10) {
+                  lcd.setCursor(18,2);
+                } else {
+                  lcd.setCursor(17,2);
+                }
+                lcd.print(restoreBankCont);
+                lcd.setCursor(19,2);
+                lcd.print(F("/"));
+                lcd.setCursor(20,2);
+                lcd.print(restorePaqSize);
+                
+                sendRestoreBank(restoreBankCont);
+                return;
+              } else {
+                // Ultimo paquete
+                memcpy(&bankTemp[restoreBankContRx * file_div_size], &readData[3], sizeofsysex-5);
+                if ((restoreBankCont+1) < 10) {
+                  lcd.setCursor(18,2);
+                } else {
+                  lcd.setCursor(17,2);
+                }
+                lcd.print(restoreBankCont+1);
+                lcd.setCursor(19,2);
+                lcd.print(F("/"));
+                lcd.setCursor(20,2);
+                lcd.print(restorePaqSize);
+                
+                // Guardado en memoria
+                memcpy(&data.bank[bankNumber-1], &bankTemp, sizeof(data.bank[bankNumber-1]));
+            
+                // Guardado en EEPROM
+                i2cStat = myEEPROM.write(bankOffset,(byte*)&data.bank[bankNumber-1], sizeof(data.bank[bankNumber-1]));
+                if ( i2cStat != 0 ) {
+                  printMainMsg(13, F("EEPROM w error"), 0);
+                  while (true) {}
+                }
+                lcd.clear();
+                lcd.setCursor(5,1);
+                lcd.print(F("Saved Backup Data in Bank"));
+                lcd.setCursor(31,1);
+                lcd.print(bankNumber);
+                delay(300);
+              }
+          } else {
+            printMainMsg(7, F("Error al recibir los datos"), MAIN_MSG_TIME);
+            break;
           }
-          lcd.setCursor(qNumber,1);
-          lcd.print(F("?"));
-          lcd.setCursor(0,3);
-          lcd.print(F("(  Save  )                    (  Exit  )"));
-          while (true) {
-            if(checkMenuButton(save_button)){
-              // Guardado en memoria
-              memcpy(&bankTemp, &readData[4], 200);
-
-              printMainMsg(9, F("Receiving Bank Data..."), 500);
-              restoreBankCont += 1;
-              
+        }
+        break;
+      // Backup Send All Banks
+      case 12:
+        {
+          sizeOfData = 5;
+          if (sizeofsysex == sizeOfData) {
+            byte sendBankContRx = readData[2];
+            lcd.clear();
+            lcd.setCursor(11,1);
+            lcd.print(F("Sending all Banks"));
+            if ((sendBankContRx) < 10) {
               lcd.setCursor(18,2);
-              lcd.print(restoreBankCont);
-              lcd.setCursor(19,2);
-              lcd.print(F("/"));
-              lcd.setCursor(20,2);
-              lcd.print(restorePaqSize);
-              
-              sendRestoreBank(restoreBankCont);
+            } else {
+              lcd.setCursor(17,2);
+            }
+            lcd.print(sendBankContRx);
+            lcd.setCursor(19,2);
+            lcd.print(F("/"));
+            lcd.setCursor(20,2);
+            lcd.print(n_banks);
+
+            delay(150);
+            sendAllBanksData(sendBankContRx);
+            if (sendBankContRx < n_banks) {
               return;
-            } else if(checkMenuButton(exit_button)){
+            } else {
+              delay(300);
               break;
             }
           }
-        } else if (restoreBankContRx == restoreBankCont) {
-            if (restoreBankContRx != (restorePaqSize-1)) {
-              memcpy(&bankTemp[restoreBankContRx * 200], &readData[3], 200);
-              restoreBankCont += 1;
-              if (restoreBankCont < 10) {
-                lcd.setCursor(18,2);
-              } else {
-                lcd.setCursor(17,2);
-              }
-              lcd.print(restoreBankCont);
-              lcd.setCursor(19,2);
-              lcd.print(F("/"));
-              lcd.setCursor(20,2);
-              lcd.print(restorePaqSize);
-              
-              sendRestoreBank(restoreBankCont);
-              return;
-            } else {
-              // Ultimo paquete
-              memcpy(&bankTemp[restoreBankContRx * 200], &readData[3], sizeofsysex-5);
-              if ((restoreBankCont+1) < 10) {
-                lcd.setCursor(18,2);
-              } else {
-                lcd.setCursor(17,2);
-              }
-              lcd.print(restoreBankCont+1);
-              lcd.setCursor(19,2);
-              lcd.print(F("/"));
-              lcd.setCursor(20,2);
-              lcd.print(restorePaqSize);
-              
-              // Guardado en memoria
-              memcpy(&data.bank[bankNumber-1], &bankTemp, sizeof(data.bank[bankNumber-1]));
-          
-              // Guardado en EEPROM
-              i2cStat = myEEPROM.write(bankOffset,(byte*)&data.bank[bankNumber-1], sizeof(data.bank[bankNumber-1]));
-              if ( i2cStat != 0 ) {
-                printMainMsg(13, F("EEPROM w error"), 0);
-                while (true) {}
-              }
-              lcd.clear();
-              lcd.setCursor(5,1);
-              lcd.print(F("Saved Backup Data in Bank"));
-              lcd.setCursor(31,1);
-              lcd.print(bankNumber);
-              delay(300);
-            }
-        } else {
-          printMainMsg(7, F("Error al recibir los datos"), MAIN_MSG_TIME);
+        }
+        break;
+      // Restore All Banks Data First Time
+      case 13:
+        lcd.clear();
+        lcd.setCursor(5,1);
+        lcd.print(F("Save all banks data? (DANGER)"));
+        lcd.setCursor(0,3);
+        lcd.print(F("(  Save  )                    (  Exit  )"));
+        while (true) {
+          if(checkMenuButton(save_button)){
+            // Guardado en memoria
+            memcpy(&allBanksTemp, &readData[2], file_div_size);
+
+            printMainMsg(9, F("Receiving Bank Data..."), 500);
+            allBanksCont = file_div_size;
+
+            lcd.setCursor(17,2);
+            lcd.print(F("0 %"));
+            delay(100);
+            sendRestoreAllBanks(13);
+            return;
+          } else if(checkMenuButton(exit_button)){
+            break;
+          }
+        }
+        break;
+      // Restore All Banks Data X Times
+      case 14:
+        // Guardado en memoria
+        memcpy(&allBanksTemp[allBanksCont], &readData[2], (sizeofsysex-4));
+
+        // Último paquete
+        if ((allBanksCont + (sizeofsysex-4)) >= sizeof(data)) {
+          lcd.clear();
+          lcd.setCursor(14,1);
+          lcd.print(F("Saving..."));
+          // Guardado en memoria
+          memcpy(&data, &allBanksTemp, sizeof(data));
+      
+          // Guardado en EEPROM
+          i2cStat = myEEPROM.write(0,(byte*)&data, sizeof(data));
+          if ( i2cStat != 0 ) {
+            printMainMsg(13, F("EEPROM w error"), 0);
+            while (true) {}
+          }
+          lcd.clear();
+          lcd.setCursor(4,1);
+          lcd.print(F("Saved Backup Data in All Banks"));
+          delay(300);
           break;
         }
+        
+        allBanksCont += (sizeofsysex-4);
+
+        if (((allBanksCont*100)/sizeof(data)) < 10) {
+          lcd.setCursor(17,2);
+        } else {
+          lcd.setCursor(16,2);
+        }
+        lcd.print((allBanksCont*100)/sizeof(data));
+        lcd.setCursor(18,2);
+        lcd.print(F(" %"));
+        delay(100);
+        sendRestoreAllBanks(14);
+        return;
     }
     delay(500);
     drawColors();
@@ -986,6 +1262,19 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
 void sendRestoreBank (byte restoreBankContTemp) {
   byte dataStart[] = { 0xF0 };
   byte dataMiddle[] = { 11, restoreBankContTemp };
+  byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+  byte dataCRC[] = { checksum };
+  byte dataEnd[] = { 0xF7 };
+  
+  usbMIDI.sendSysEx(1, dataStart, true);
+  usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+  usbMIDI.sendSysEx(1, dataCRC, true);
+  usbMIDI.sendSysEx(1, dataEnd, true);
+}
+
+void sendRestoreAllBanks (byte byteData) {
+  byte dataStart[] = { 0xF0 };
+  byte dataMiddle[] = { byteData };
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
@@ -1026,15 +1315,20 @@ void lcdPreset() {
   lcd.setCursor(0,2);
   lcd.print(F("PST                              "));
   lcd.setCursor(4,2);
-  if (pageNumber == 1) {
-    lcd.print(presetsName[buttonNumber-1]);
-  } else {
-    lcd.print(presetsName[(buttonNumber-1)+n_presets]);
+  if (presetButtonNumber != 0) {
+    if (pageNumber == 1) {
+      lcd.print(presetsName[presetButtonNumber-1]);
+    } else {
+      lcd.print(presetsName[(presetButtonNumber-1)+n_presets]);
+    }
   }
+  
   lcd.setCursor(5,2);
   lcd.print(F(": "));
   lcd.setCursor(7,2);
-  lcd.print(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].longName);
+  if (presetButtonNumber != 0) {
+    lcd.print(data.bank[presetBankNumber-1].page[presetPageNumber-1].preset[presetButtonNumber-1].longName);
+  }
 }
 
 void lcdPresetNames() {
@@ -1143,6 +1437,120 @@ bool checkMenuButton(byte i) {
   return false;
 }
 
+void showInfoMenu() {
+  lcd.clear();
+  // Fila 1
+  lcd.setCursor(0,1);
+  lcd.print(F("Bank size: "));
+  lcd.setCursor(11,1);
+  lcd.print(sizeof(data.bank[0]));
+  lcd.setCursor(0,2);
+  lcd.print(F("All size: "));
+  lcd.setCursor(10,2);
+  lcd.print(sizeof(data));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void infoMenu() {
+  while (true) {
+    if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void showFactoryMenu() {
+  lcd.clear();
+  // Fila 0 (Superior)
+  lcd.setCursor(0,0);
+  lcd.print(F("( Banks  )(Settings)(  All   )          "));
+  // Fila 1
+  lcd.setCursor(0,1);
+  lcd.print(F("[Factory Reset Menu]"));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void factoryMenu() {
+  while (true) {
+    // Button E (Reset Banks)
+    if(checkMenuButton(6)){
+      if (resetMenuConfirm(13, F("Reset Banks?"))) {
+        printMainMsg(13, F("Resetting..."), 0);
+        resetBanks();
+        printMainMsg(11, F("Reset Banks Done"), 1200);
+        return;
+      }
+    // Button F (Reset Settings)
+    } else if(checkMenuButton(7)){
+      if (resetMenuConfirm(12, F("Reset Settings?"))) {
+        printMainMsg(13, F("Resetting..."), MAIN_MSG_TIME);
+        resetSettings();
+        printMainMsg(9, F("Reset Settings Done"), 1200);
+        return;
+      }
+    // Button G (Reset All)
+    } else if(checkMenuButton(8)){
+      if (resetMenuConfirm(14, F("Reset All?"))) {
+        printMainMsg(13, F("Resetting..."), 0);
+        resetBanks();
+        resetSettings();
+        printMainMsg(12, F("Reset All Done"), 1200);
+        return;
+      }
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void resetBanks() {
+  myEEPROM.write(0,(byte*)&data, sizeof(data));
+}
+
+void resetSettings() {
+  EEPROM[0] = 1; // bankNumber
+  EEPROM[1] = 12; // debounceTime
+  EEPROM[2] = 75; // longPressTime
+  EEPROM[3] = 40; // notificationTime
+  EEPROM[4] = 100; // ringBright
+  EEPROM[5] = 10; // ringDim
+  EEPROM[30] = 3; // allBright
+  short confCalibrateExpDown = 0;
+  short confCalibrateExpUp = 1023;
+  
+  for(int i=0; i<OMNIPORT_NUMBER; i++){
+    EEPROM[6+i] = 0;
+  }
+  for(int i=0; i<OMNIPORT_NUMBER; i++){
+    EEPROM.put(10+(4*i), confCalibrateExpDown);
+    EEPROM.put((10+(4*i))+2, confCalibrateExpUp);
+  }
+}
+
+boolean resetMenuConfirm(int pos, String msg) {
+  lcd.clear();
+  lcd.setCursor(pos,1);
+  lcd.print(msg);
+  lcd.setCursor(1,2);
+  lcd.print(F("Press Reset button to confirm (Danger)"));
+  lcd.setCursor(0,3);
+  lcd.print(F("( Reset  )                    (  Exit  )"));
+  while (true) {
+    if(checkMenuButton(save_button)){
+      checkMenuButtonRelease();
+      return true;
+    } else if(checkMenuButton(exit_button)){
+      showFactoryMenu();
+      checkMenuButtonRelease();
+      return false;
+    }
+  }
+}
+
 void showConfMenu(byte page) {
   lcd.clear();
   // Fila 0 (Superior)
@@ -1165,7 +1573,7 @@ void showConfMenu(byte page) {
       lcd.print(F("(Debounce)(LongPres)(Notifica)(  Exit  )"));
       break;
     case 2:
-      lcd.print(F("(RingBrig)(RingDim )          (  Exit  )"));
+      lcd.print(F("(RingBrig)(RingDim )(AllBrigh)(  Exit  )"));
       break;
   }
 }
@@ -1217,6 +1625,7 @@ void confMenu() {
           confMenuNotificationTime();
           break;
         case 2:
+          confMenuAllBrigh();
           break;
       }
       showConfMenu(page);
@@ -1374,6 +1783,63 @@ void confCalibrateExpUp(byte pedalNumber) {
   }
 }
 
+
+
+
+void printAllBright(byte confAll) {
+  lcd.setCursor(16,2);
+  lcd.print(F("      "));
+  lcd.setCursor(16,2);
+  lcd.print(confAll);
+}
+
+void confMenuAllBrigh() {
+  byte confAllBrigh = EEPROM[30];
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print(F("[Edit Led All Bright]"));
+  lcd.setCursor(0,2);
+  lcd.print(F("Led All Bright: "));
+  printAllBright(confAllBrigh);
+  printEditBar();
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      EEPROM.update(30, confAllBrigh);
+      if (confAllBrigh == 0) {
+        pixels.setBrightness(0);
+      } else {
+        pixels.setBrightness((EEPROM[30]*32)-1);
+      }
+      
+      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confAllBrigh > 0) {
+        confAllBrigh -= 1;
+      } else {
+        confAllBrigh = 8;
+      }
+      printAllBright(confAllBrigh);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confAllBrigh < 8) {
+        confAllBrigh += 1;
+      } else {
+        confAllBrigh = 0;
+      }
+      printAllBright(confAllBrigh);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+
+
+
+
 void printRingBright(byte confRing) {
   lcd.setCursor(17,2);
   lcd.print(F("      "));
@@ -1393,7 +1859,7 @@ void confMenuRingBright() {
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
-      EEPROM.update(6, confRingBright);
+      EEPROM.update(4, confRingBright);
       ringBright = confRingBright;
       printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
       return;
@@ -1431,14 +1897,14 @@ void confMenuRingDim() {
   lcd.clear();
   lcd.setCursor(0,1);
   lcd.print(F("[Edit Led Ring Dim]"));
-  lcd.setCursor(0,1);
+  lcd.setCursor(0,2);
   lcd.print(F("Led Ring Dim: "));
   printRingDim(confRingDim);
   printEditBar();
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
-      EEPROM.update(7, confRingDim);
+      EEPROM.update(5, confRingDim);
       ringDim = confRingDim;
       printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
       return;
