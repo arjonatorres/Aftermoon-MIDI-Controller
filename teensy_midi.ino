@@ -1108,11 +1108,18 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                 lcd.print(F("/"));
                 lcd.setCursor(20,2);
                 lcd.print(restorePaqSize);
-                
+                delay(100);
                 sendRestoreBank(restoreBankCont);
                 return;
               } else {
                 // Ultimo paquete
+                if (((restoreBankContRx * file_div_size) + (sizeofsysex-5)) > sizeof(data.bank[0])) {
+                  lcd.clear();
+                  lcd.setCursor(8,1);
+                  lcd.print(F("Error receiving data..."));
+                  delay(1000);
+                  break;
+                }
                 memcpy(&bankTemp[restoreBankContRx * file_div_size], &readData[3], sizeofsysex-5);
                 if ((restoreBankCont+1) < 10) {
                   lcd.setCursor(18,2);
@@ -1191,7 +1198,7 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
             memcpy(&allBanksTemp, &readData[2], file_div_size);
 
             printMainMsg(9, F("Receiving Bank Data..."), 500);
-            allBanksCont = file_div_size;
+            allBanksCont = sizeofsysex-4;
 
             lcd.setCursor(17,2);
             lcd.print(F("0 %"));
@@ -1208,8 +1215,16 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
         // Guardado en memoria
         memcpy(&allBanksTemp[allBanksCont], &readData[2], (sizeofsysex-4));
 
+        if ((allBanksCont + (sizeofsysex-4)) > sizeof(data)) {
+          lcd.clear();
+          lcd.setCursor(8,1);
+          lcd.print(F("Error receiving data..."));
+          delay(1000);
+          break;
+        }
+
         // Último paquete
-        if ((allBanksCont + (sizeofsysex-4)) >= sizeof(data)) {
+        if ((allBanksCont + (sizeofsysex-4)) == sizeof(data)) {
           lcd.clear();
           lcd.setCursor(14,1);
           lcd.print(F("Saving..."));
@@ -1225,7 +1240,7 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
           lcd.clear();
           lcd.setCursor(4,1);
           lcd.print(F("Saved Backup Data in All Banks"));
-          delay(300);
+          delay(1000);
           break;
         }
         
