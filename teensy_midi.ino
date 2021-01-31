@@ -4,6 +4,7 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C_40x4.h>
 #include <extEEPROM.h>
+#include "Watchdog_t4.h"
 
 #define n_messages 8
 #define n_presets 8
@@ -34,6 +35,7 @@ unsigned long pressedTime  = 0;
 short expDown[OMNIPORT_NUMBER];
 short expUp[OMNIPORT_NUMBER];
 char presetsName[16] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'};
+WDT_T4<WDT1> wdt;
 
 
 // EEPROM
@@ -1575,7 +1577,10 @@ void showConfMenu(byte page) {
       lcd.print(F("(OnmiPor1)(OnmiPor2)          (  Page2 )"));
       break;
     case 2:
-      lcd.print(F("(Calibr-1)(Calibr-2)          (  Page1 )"));
+      lcd.print(F("(Calibr-1)(Calibr-2)          (  Page3 )"));
+      break;
+    case 3:
+      lcd.print(F("                              (  Page1 )"));
       break;
   }
   
@@ -1589,6 +1594,9 @@ void showConfMenu(byte page) {
       break;
     case 2:
       lcd.print(F("(RingBrig)(RingDim )(AllBrigh)(  Exit  )"));
+      break;
+    case 3:
+      lcd.print(F("                    ( Reboot )(  Exit  )"));
       break;
   }
 }
@@ -1642,6 +1650,9 @@ void confMenu() {
         case 2:
           confMenuAllBrigh();
           break;
+        case 3:
+          confMenuReboot();
+          break;
       }
       showConfMenu(page);
       checkMenuButtonRelease();
@@ -1676,6 +1687,9 @@ void confMenu() {
           page = 2;
           break;
         case 2:
+          page = 3;
+          break;
+        case 3:
           page = 1;
           break;
       }
@@ -1852,8 +1866,34 @@ void confMenuAllBrigh() {
 }
 
 
+void confMenuReboot() {
+  lcd.clear();
+  lcd.setCursor(9,1);
+  lcd.print(F("Do you want to reboot?"));
+  lcd.setCursor(0,3);
+  lcd.print(F("( Reboot )                    (  Exit  )"));
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      actionReboot();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
 
-
+void actionReboot() {
+  lcd.clear();
+  lcd.setCursor(14,1);
+  lcd.print(F("Rebooting..."));
+  // Watchdog
+  WDT_timings_t config;
+  //config.trigger = 5; /* in seconds, 0->128 */
+  config.timeout = 1; /* in seconds, 0->128 */
+  //config.callback = myCallback;
+  wdt.begin(config);
+  while (true) {}
+}
 
 void printRingBright(byte confRing) {
   lcd.setCursor(17,2);
