@@ -81,6 +81,69 @@ struct Color colors[] = {
   {173,255,47}    // 11 - Lime
 };
 
+// FM3 Effects
+int fm3Effects[] = {
+  46,   // ID_COMP1
+  47,   // ID_COMP2
+  50,   // ID_GRAPHEQ1
+  51,   // ID_GRAPHEQ2
+  54,   // ID_PARAEQ1
+  55,   // ID_PARAEQ2
+  58,   // ID_DISTORT1
+  62,   // ID_CAB1
+  66,   // ID_REVERB1
+  70,   // ID_DELAY1
+  71,   // ID_DELAY2
+  74,   // ID_MULTITAP1
+  78,   // ID_CHORUS1
+  79,   // ID_CHORUS2
+  82,   // ID_FLANGER
+  83,   // ID_FLANGER2
+  86,   // ID_ROTARY1
+  87,   // ID_ROTARY2
+  90,   // ID_PHASER1
+  91,   // ID_PHASER2
+  94,   // ID_WAH1
+  95,   // ID_WAH2
+  98,   // ID_FORMANT1
+  99,   // ID_FORMANT2
+  102,  // ID_VOLUME1
+  103,  // ID_VOLUME2
+  106,  // ID_TREMOLO1
+  107,  // ID_TREMOLO2
+  110,  // ID_PITCH1
+  114,  // ID_FILTER1
+  115,  // ID_FILTER2
+  116,  // ID_FILTER3
+  117,  // ID_FILTER4
+  118,  // ID_FUZZ1
+  119,  // ID_FUZZ2
+  122,  // ID_ENHANCER1
+  123,  // ID_ENHANCER2
+  126,  // ID_MIXER1
+  127,  // ID_MIXER2
+  128,  // ID_MIXER3
+  129,  // ID_MIXER4
+  130,  // ID_SYNTH1
+  138,  // ID_MEGATAP1
+  146,  // ID_GATE1
+  147,  // ID_GATE2
+  150,  // ID_RINGMOD1
+  154,  // ID_MULTICOMP1
+  158,  // ID_TENTAP1
+  162,  // ID_RESONATOR1
+  163,  // ID_RESONATOR2
+  166,  // ID_LOOPER1
+  178,  // ID_PLEX1
+  182,  // ID_FBSEND1
+  183,  // ID_FBSEND2
+  186,  // ID_FBRETURN1
+  187,  // ID_FBRETURN2
+  190,  // ID_MIDIBLOCK
+  191,  // ID_MULTIPLEXER1
+  192,  // ID_MULTIPLEXER2
+  };
+
 // Data
 byte bankNumber;
 byte pageNumber;
@@ -138,6 +201,8 @@ struct Data
 // Single & Long Press Positions
 struct PosPreset
   {
+    byte posSingleStatus = 1; // 0 - OFF / 1 - ON
+    byte posLongStatus = 1;   // 0 - OFF / 1 - ON
     byte posSingle = 0;
     byte posLong = 0;
   };
@@ -216,7 +281,7 @@ void setup() {
 
   myEEPROM.read(0,(byte*)&data, sizeof(data));
   //myEEPROM.write(0,(byte*)&data, sizeof(data));
-  usbMIDI.setHandleSystemExclusive(OnSysEx);
+  usbMIDI.setHandleSystemExclusive(OnUSBSysEx);
 
   pixels.begin();
   if (EEPROM[30] == 0) {
@@ -260,24 +325,48 @@ void drawColors() {
             }
           }
         } else {
+          if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posSingleStatus == 0) {
+            for(int j=0; j<3; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+            if (lpColorNumber == 0) {
+              for(int j=4; j<7; j++){
+                pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+              }
+            }
+          } else {
+            for(int j=0; j<3; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+            if (lpColorNumber == 0) {
+              for(int j=4; j<7; j++){
+                pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+              }
+            }
+          }
+          
+        }
+      } else {
+        if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posSingleStatus == 0) {
           for(int j=0; j<3; j++){
-            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
           }
           if (lpColorNumber == 0) {
             for(int j=4; j<7; j++){
-              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          }
+        } else {
+          for(int j=0; j<3; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
             }
           }
         }
-      } else {
-        for(int j=0; j<3; j++){
-          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
-        }
-        if (lpColorNumber == 0) {
-          for(int j=4; j<7; j++){
-            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
-          }
-        }
+        
       }
     } else if (spPresetType == 1) {
       if (bankNumber == presetBankNumber && pageNumber == presetPageNumber && (i+1) == presetButtonNumber && presetSPNumber == 0) {
@@ -781,115 +870,195 @@ void sendMIDIMessage(byte i) {
     case 23:
       delay((data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0])*10);
       break;
+    // FM3 Preset Change
+    case 25:
+      MIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+      if (sendMIDIMonitor && editMode) {
+        usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+      }
+      fm3PresetChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      break;
+    // FM3 Effect State Change
+    case 26:
+      
   }
 }
 
+void fm3PresetChange(byte ) {
+  // Solicitamos el estado de todos los efectos al FM3
+  byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x13 };
+  byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+  byte dataCRC[] = { checksum };
+  byte dataEnd[] = { 0xF7 };
+  // TODO - Cambiar a MIDI normal cuando finalicen las pruebas
+  usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+  usbMIDI.sendSysEx(1, dataCRC, true);
+  usbMIDI.sendSysEx(1, dataEnd, true);
+}
+
 void sendUSBPresetData() {
-  byte dataStart[] = { 0xF0 };
-  int arraySize = sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]) + 4;
+  int arraySize = sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]) + 5;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 0x01;
-  dataMiddle[1] = bankNumber;
-  dataMiddle[2] = pageNumber;
-  dataMiddle[3] = buttonNumber;
-  memcpy(&dataMiddle[4], (byte*)&data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 0x01;
+  dataMiddle[2] = bankNumber;
+  dataMiddle[3] = pageNumber;
+  dataMiddle[4] = buttonNumber;
+  memcpy(&dataMiddle[5], (byte*)&data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1], sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
 
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendCurrentBankData() {
-  byte dataStart[] = { 0xF0 };
-  int arraySize = sizeof(data.bank[bankNumber-1]) + 2;
+  int arraySize = sizeof(data.bank[bankNumber-1]) + 3;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 10;
-  dataMiddle[1] = bankNumber;
-  memcpy(&dataMiddle[2], (byte*)&data.bank[bankNumber-1], sizeof(data.bank[bankNumber-1]));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 10;
+  dataMiddle[2] = bankNumber;
+  memcpy(&dataMiddle[3], (byte*)&data.bank[bankNumber-1], sizeof(data.bank[bankNumber-1]));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
 
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendAllBanksData(byte bankNumberRx) {
-  byte dataStart[] = { 0xF0 };
-  int arraySize = sizeof(data.bank[bankNumberRx-1]) + 2;
+  int arraySize = sizeof(data.bank[bankNumberRx-1]) + 3;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 12;
-  dataMiddle[1] = bankNumberRx;
-  memcpy(&dataMiddle[2], (byte*)&data.bank[bankNumberRx-1], sizeof(data.bank[bankNumberRx-1]));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 12;
+  dataMiddle[2] = bankNumberRx;
+  memcpy(&dataMiddle[3], (byte*)&data.bank[bankNumberRx-1], sizeof(data.bank[bankNumberRx-1]));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
 
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendUSBBankData() {
-  byte dataStart[] = { 0xF0 };
-  int arraySize = sizeof(data.bank[bankNumber-1].bankName) + 1;
+  int arraySize = sizeof(data.bank[bankNumber-1].bankName) + 2;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 0x02;
-  memcpy(&dataMiddle[1], (byte*)&data.bank[bankNumber-1].bankName, sizeof(data.bank[bankNumber-1].bankName));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 0x02;
+  memcpy(&dataMiddle[2], (byte*)&data.bank[bankNumber-1].bankName, sizeof(data.bank[bankNumber-1].bankName));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
   
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendSettingsData() {
-  byte dataStart[] = { 0xF0 };
   byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[30], EEPROM[6], EEPROM[7] };
-  int arraySize = sizeof(eepromData) + 1;
+  int arraySize = sizeof(eepromData) + 2;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 0x03;
-  memcpy(&dataMiddle[1], (byte*)&eepromData, sizeof(eepromData));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 0x03;
+  memcpy(&dataMiddle[2], (byte*)&eepromData, sizeof(eepromData));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
   
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendUSBExpData(byte pedalNumber) {
-  byte dataStart[] = { 0xF0 };
-  int arraySize = sizeof(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1]) + 4;
+  int arraySize = sizeof(data.bank[bankNumber-1].port[pedalNumber]) + 4;
   byte dataMiddle[arraySize] = {};
-  dataMiddle[0] = 0x09;
-  dataMiddle[1] = bankNumber;
-  dataMiddle[2] = pedalNumber;
-  memcpy(&dataMiddle[3], (byte*)&data.bank[bankNumber-1].port[pedalNumber], sizeof(data.bank[bankNumber-1].port[pedalNumber]));
+  dataMiddle[0] = 0xF0;
+  dataMiddle[1] = 0x09;
+  dataMiddle[2] = bankNumber;
+  dataMiddle[3] = pedalNumber;
+  memcpy(&dataMiddle[4], (byte*)&data.bank[bankNumber-1].port[pedalNumber], sizeof(data.bank[bankNumber-1].port[pedalNumber]));
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
-  
   byte dataEnd[] = { 0xF7 };
-  usbMIDI.sendSysEx(1, dataStart, true);
+  
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void OnSysEx(byte* readData, unsigned sizeofsysex) {
-  byte checksumOrigin = XORChecksum8((byte*)&readData[1], sizeofsysex-3);
+  if (readData[1] == 0x00 && readData[2] == 0x01 && readData[3] == 0x74 && readData[4] == 0x11) {
+    switch(readData[5]) {
+      // Receive all effects status
+      case 0x13:
+        int z = 0;
+        for(unsigned int i=6; i<sizeofsysex-2; i+=3){
+          z++;
+        }
+
+        byte effectIDs[z*2];
+        int y = 0;
+        for(unsigned int i=6; i<sizeofsysex-2; i+=3){
+          int effectID = readData[i];
+          if (readData[i+1] != 0) {
+            int effectIDSec = (int)readData[i+1];
+            effectID = (effectIDSec << 7) + effectID;
+          }
+          byte sizeFm3Effects = sizeof(fm3Effects) / sizeof(int);
+          for(byte j=0; j<sizeFm3Effects; j++){
+            if (effectID == fm3Effects[j]) {
+              effectIDs[y] = j;
+              effectIDs[y+1] = readData[i+2];
+              y+=2;
+              break;
+            }
+          }
+        }
+
+        // Recorremos los presets para setear los efectos donde corresponda
+        for(byte i_bank=0; i_bank<n_banks; i_bank++){
+          for(byte i_page=0; i_page<2; i_page++){
+            for(byte i_preset=0; i_preset<n_presets; i_preset++){
+              for(byte i_message=0; i_message<n_messages; i_message++){
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 26) {
+                  bool effectFind = false;
+                  for(byte k=0; k<(z*2); k+=2) {
+                    if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == effectIDs[k]) {
+                      effectFind = true;
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 1;
+                      if (bitValue(effectIDs[k+1], 0) == 0) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                      }
+                    }
+                  }
+                  if (!effectFind) {
+                    posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 0;
+                  }
+                }
+              }
+            }
+          }
+        }
+    }
+  }
+  drawColors();
+  lcdChangeAll();
+}
+
+
+
+void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
+  byte checksumOrigin = XORChecksum8((byte*)&readData[0], sizeofsysex-2);
   byte checksum = readData[sizeofsysex-2];
   if (checksumOrigin != checksum) {
     lcd.clear();
@@ -927,6 +1096,10 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
     }
   
     switch (readData[1]) {
+      // TODO - Borrar cuando se habilite el MIDI normal
+      case 0:
+        OnSysEx(readData, sizeofsysex);
+        return;
       // Save Preset Data
       case 1:
         sizeOfData = sizeof(struct Preset) + 7;
@@ -1277,26 +1450,22 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
 }
 
 void sendRestoreBank (byte restoreBankContTemp) {
-  byte dataStart[] = { 0xF0 };
-  byte dataMiddle[] = { 11, restoreBankContTemp };
+  byte dataMiddle[] = { 0xF0, 11, restoreBankContTemp };
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
   
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
 }
 
 void sendRestoreAllBanks (byte byteData) {
-  byte dataStart[] = { 0xF0 };
-  byte dataMiddle[] = { byteData };
+  byte dataMiddle[] = { 0xF0, byteData };
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
   
-  usbMIDI.sendSysEx(1, dataStart, true);
   usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
   usbMIDI.sendSysEx(1, dataCRC, true);
   usbMIDI.sendSysEx(1, dataEnd, true);
@@ -1410,6 +1579,10 @@ void printPresetPos(int pos, char stringVal[]) {
 
 byte bitValue(byte num, byte pos) {
   return ((num >> pos)&0x01);
+}
+
+byte setBit(byte num, byte pos) {
+  return num |= 1 << pos;
 }
 
 void togglePag() {
@@ -2201,5 +2374,5 @@ uint8_t XORChecksum8(const byte *data, size_t dataLength)
   {
     value ^= (uint8_t)data[i];
   }
-  return ~value&0x7F;
+  return value&0x7F;
 }
