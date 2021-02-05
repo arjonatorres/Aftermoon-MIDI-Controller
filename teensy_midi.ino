@@ -20,6 +20,7 @@
 #define FXD1_SWITCH_TYPE 2
 #define FXD2_SWITCH_TYPE 3
 #define MAIN_MSG_TIME 800
+#define SCENE_NUMBER 8
 
 
 // Settings
@@ -27,7 +28,9 @@ boolean sendMIDIMonitor = false;
 byte portType[OMNIPORT_NUMBER];
 byte ringBright;
 byte ringDim;
+byte requestFm3Scenes;
 boolean editMode = false;
+boolean setActualScene = false;
 unsigned int debounceTime;
 unsigned int longPressTime;
 unsigned int notificationTime;
@@ -73,7 +76,9 @@ struct Color colors[] = {
   {255,255,0},    // 3 - Yellow
   {0,255,0},      // 4 - Green
   {0,0,255},      // 5 - Blue
-  {0,191,255},    // 6 - Cyan
+  //{0,191,255},    // 6 - Cyan
+  //{0,172,230},    // 6 - Cyan
+  {0,153,204},    // 6 - Cyan
   {128,0,128},    // 7 - Purple
   {255,255,255},  // 8 - White
   {255,105,180},  // 9 - Pink
@@ -148,6 +153,7 @@ int fm3Effects[] = {
 byte bankNumber;
 byte pageNumber;
 byte buttonNumber;
+byte sceneNumber;
 byte presetBankNumber;
 byte presetPageNumber;
 byte presetButtonNumber;
@@ -270,6 +276,7 @@ void setup() {
     EEPROM.get(10+(4*i),expDown[i]);
     EEPROM.get((10+(4*i))+2,expUp[i]);
   }
+  requestFm3Scenes = EEPROM[31];
   
   bankNumber = EEPROM[0];
   pageNumber = 1;
@@ -731,16 +738,19 @@ void sendMIDIMessage(byte i) {
     case 10:
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankUp();
+      lcdChangeAll();
       break;
     // Bank Down
     case 11:
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankDown();
+      lcdChangeAll();
       break;
     // Bank Jump
     case 13:
       bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
+      lcdChangeAll();
       break;
     // Toggle Page
     case 14:
@@ -876,24 +886,116 @@ void sendMIDIMessage(byte i) {
       if (sendMIDIMonitor && editMode) {
         usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
       }
-      fm3PresetChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+      fm3PresetChange();
       break;
     // FM3 Effect State Change
     case 26:
+    {
+      byte effectIDIndex = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      int effectID = fm3Effects[effectIDIndex];
+      byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0A, 0x00, 0x00, 0x00 };
+      dataMiddle[6] = effectID&0x7F;
+      dataMiddle[7] = effectID >> 7;
+      dataMiddle[8] = posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle;
+      byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+      byte dataCRC[] = { checksum };
+      byte dataEnd[] = { 0xF7 };
+
+      MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      MIDI.sendSysEx(1, dataCRC, true);
+      MIDI.sendSysEx(1, dataEnd, true);
+      if (editMode) {
+        usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+        usbMIDI.sendSysEx(1, dataCRC, true);
+        usbMIDI.sendSysEx(1, dataEnd, true);
+      }
+      break;
+    }
+    // FM3 Scene Change
+    case 27:
+    {
+      byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0C, 0x00 };
+      dataMiddle[6] = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+      byte dataCRC[] = { checksum };
+      byte dataEnd[] = { 0xF7 };
+
+      MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      MIDI.sendSysEx(1, dataCRC, true);
+      MIDI.sendSysEx(1, dataEnd, true);
+      if (editMode) {
+        usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+        usbMIDI.sendSysEx(1, dataCRC, true);
+        usbMIDI.sendSysEx(1, dataEnd, true);
+      }
       
+      // Recorremos los presets para setear las escenas donde corresponda
+      for(byte i_bank=0; i_bank<n_banks; i_bank++){
+        for(byte i_page=0; i_page<2; i_page++){
+          for(byte i_preset=0; i_preset<n_presets; i_preset++){
+            for(byte i_message=0; i_message<n_messages; i_message++){
+              if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
+                posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+              }
+            }
+          }
+        }
+      }
+      break;
+    }
+    // FM3 Channel Change
+    case 28:
+    {
+      byte effectIDIndex = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      int effectID = fm3Effects[effectIDIndex];
+      byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0B, 0x00, 0x00, 0x00 };
+      dataMiddle[6] = effectID&0x7F;
+      dataMiddle[7] = effectID >> 7;
+      dataMiddle[8] = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1];
+      byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+      byte dataCRC[] = { checksum };
+      byte dataEnd[] = { 0xF7 };
+
+      MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      MIDI.sendSysEx(1, dataCRC, true);
+      MIDI.sendSysEx(1, dataEnd, true);
+      if (editMode) {
+        usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+        usbMIDI.sendSysEx(1, dataCRC, true);
+        usbMIDI.sendSysEx(1, dataEnd, true);
+      }
+      // Recorremos los presets para setear las escenas donde corresponda
+      for(byte i_bank=0; i_bank<n_banks; i_bank++){
+        for(byte i_page=0; i_page<2; i_page++){
+          for(byte i_preset=0; i_preset<n_presets; i_preset++){
+            for(byte i_message=0; i_message<n_messages; i_message++){
+              if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 28) {
+                posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+              }
+            }
+          }
+        }
+      }
+      break;
+    }
   }
 }
 
-void fm3PresetChange(byte ) {
+void fm3PresetChange() {
   // Solicitamos el estado de todos los efectos al FM3
   byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x13 };
   byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
   byte dataCRC[] = { checksum };
   byte dataEnd[] = { 0xF7 };
-  // TODO - Cambiar a MIDI normal cuando finalicen las pruebas
-  usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
-  usbMIDI.sendSysEx(1, dataCRC, true);
-  usbMIDI.sendSysEx(1, dataEnd, true);
+
+  MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+  MIDI.sendSysEx(1, dataCRC, true);
+  MIDI.sendSysEx(1, dataEnd, true);
+  if (editMode) {
+    usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+    usbMIDI.sendSysEx(1, dataCRC, true);
+    usbMIDI.sendSysEx(1, dataEnd, true);
+  }
 }
 
 void sendUSBPresetData() {
@@ -962,7 +1064,7 @@ void sendUSBBankData() {
 }
 
 void sendSettingsData() {
-  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[30], EEPROM[6], EEPROM[7] };
+  byte eepromData[] = { EEPROM[1], EEPROM[2], EEPROM[3], EEPROM[4], EEPROM[5], EEPROM[30], EEPROM[6], EEPROM[7], EEPROM[31] };
   int arraySize = sizeof(eepromData) + 2;
   byte dataMiddle[arraySize] = {};
   dataMiddle[0] = 0xF0;
@@ -999,8 +1101,9 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
     switch(readData[5]) {
       // Receive all effects status
       case 0x13:
+      {
         int z = 0;
-        for(unsigned int i=6; i<sizeofsysex-2; i+=3){
+        for(unsigned int i=6; i<sizeofsysex-2; i+=3) {
           z++;
         }
 
@@ -1023,25 +1126,27 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
           }
         }
 
-        // Recorremos los presets para setear los efectos donde corresponda
+        // Recorremos los presets para setear los efectos donde corresponda y los canales
         for(byte i_bank=0; i_bank<n_banks; i_bank++){
           for(byte i_page=0; i_page<2; i_page++){
             for(byte i_preset=0; i_preset<n_presets; i_preset++){
               for(byte i_message=0; i_message<n_messages; i_message++){
-                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 26) {
+                // Seteamos el estado de los efectos y los canales
+                byte effectType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type;
+                if (effectType == 26 || effectType == 28) {
                   bool effectFind = false;
                   for(byte k=0; k<(z*2); k+=2) {
                     if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == effectIDs[k]) {
                       effectFind = true;
                       posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 1;
-                      if (bitValue(effectIDs[k+1], 0) == 0) {
+                      if ((bitValue(effectIDs[k+1], 0) == 0 && effectType == 26) || ((((effectIDs[k+1] >> 1)&0x03) == data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1]) && effectType == 28)) {
                         posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
                       } else {
                         posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
                       }
                     }
                   }
-                  if (!effectFind) {
+                  if (!effectFind && effectType == 26) {
                     posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 0;
                   }
                 }
@@ -1049,12 +1154,122 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
             }
           }
         }
+        if (requestFm3Scenes) {
+          setActualScene = true;
+          fm3Scenes(0x7F);
+        }
+        return;
+      }
+      // Receive Scene Names
+      case 0x0E:
+      {
+        if (setActualScene) {
+          sceneNumber = readData[6];
+          setActualScene = false;
+          // Recorremos los presets para setear las escenas donde corresponda
+          for(byte i_bank=0; i_bank<n_banks; i_bank++){
+            for(byte i_page=0; i_page<2; i_page++){
+              for(byte i_preset=0; i_preset<n_presets; i_preset++){
+                for(byte i_message=0; i_message<n_messages; i_message++){
+                  if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
+                    if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
+                      if (readData[7] == 32) {
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, "Scene ", 24);
+                        data.bank[i_bank].page[i_page].preset[i_preset].longName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                      } else {
+                        char rd2[24];
+                        for (int i=0; i<24; i++) {
+                            rd2[i] = readData[7+i];
+                        }
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, rd2, 24);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                      }
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                    } else {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (sceneNumber == 0) {
+            fm3Scenes(1);
+          } else {
+            fm3Scenes(0);
+          }
+          return;
+        }
+        // Recorremos los presets para setear las escenas donde corresponda
+        for(byte i_bank=0; i_bank<n_banks; i_bank++){
+          for(byte i_page=0; i_page<2; i_page++){
+            for(byte i_preset=0; i_preset<n_presets; i_preset++){
+              for(byte i_message=0; i_message<n_messages; i_message++){
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
+                  if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
+                    if (readData[7] == 32) {
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, "Scene ", 24);
+                      data.bank[i_bank].page[i_page].preset[i_preset].longName[6] = (readData[6]+1) + '0';
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
+                      data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
+                      data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                    } else {
+                      char rd2[24];
+                      for (int i=0; i<24; i++) {
+                          rd2[i] = readData[7+i];
+                      }
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, rd2, 24);
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
+                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+  
+        if (sceneNumber != (readData[6] + 1)) {
+          if ((readData[6]+1) < 8) {
+            fm3Scenes(readData[6] + 1);
+            return;
+          }
+        } else {
+          if ((readData[6]+2) < 8) {
+            fm3Scenes(readData[6] + 2);
+            return;
+          }
+        }
+        break;
+      }
     }
   }
   drawColors();
   lcdChangeAll();
 }
 
+void fm3Scenes(byte scene) {
+  // Solicitamos el estado de la escena actual del FM3
+  byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0E, scene };
+  byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+  byte dataCRC[] = { checksum };
+  byte dataEnd[] = { 0xF7 };
+
+  MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+  MIDI.sendSysEx(1, dataCRC, true);
+  MIDI.sendSysEx(1, dataEnd, true);
+  if (editMode) {
+    usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+    usbMIDI.sendSysEx(1, dataCRC, true);
+    usbMIDI.sendSysEx(1, dataEnd, true);
+  }
+}
 
 
 void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
@@ -1190,7 +1405,8 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
           portType[0] =  readData[8];
           EEPROM.update(7, readData[9]);
           portType[1] =  readData[9];
-          
+          EEPROM.update(31, readData[10]);
+          requestFm3Scenes =  readData[10];
 
           printMainMsg(13, F("Saved Settings"), MAIN_MSG_TIME);
         }
@@ -1703,12 +1919,14 @@ void resetBanks() {
 
 void resetSettings() {
   EEPROM[0] = 1; // bankNumber
-  EEPROM[1] = 12; // debounceTime
-  EEPROM[2] = 75; // longPressTime
+  EEPROM[1] = 10; // debounceTime
+  EEPROM[2] = 50; // longPressTime
   EEPROM[3] = 40; // notificationTime
   EEPROM[4] = 100; // ringBright
   EEPROM[5] = 10; // ringDim
-  EEPROM[30] = 3; // allBright
+  EEPROM[30] = 2; // allBright
+  EEPROM[31] = 0; // requestFm3Scenes
+
   short confCalibrateExpDown = 0;
   short confCalibrateExpUp = 1023;
   
@@ -1747,7 +1965,7 @@ void showConfMenu(byte page) {
   lcd.setCursor(0,0);
   switch (page) {
     case 1:
-      lcd.print(F("(OnmiPor1)(OnmiPor2)          (  Page2 )"));
+      lcd.print(F("(OmniPor1)(OmniPor2)(ReqScene)(  Page2 )"));
       break;
     case 2:
       lcd.print(F("(Calibr-1)(Calibr-2)          (  Page3 )"));
@@ -1853,7 +2071,16 @@ void confMenu() {
       }
       showConfMenu(page);
       checkMenuButtonRelease();
-    // Button I
+    // Button G
+    } else if(checkMenuButton(8)){
+      switch (page) {
+        case 1:
+          confMenuReqFm3Scenes();
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
+    // Button H
     } else if(checkMenuButton(9)){
       switch (page) {
         case 1:
@@ -1985,9 +2212,6 @@ void confCalibrateExpUp(byte pedalNumber) {
   }
 }
 
-
-
-
 void printAllBright(byte confAll) {
   lcd.setCursor(16,2);
   lcd.print(F("      "));
@@ -2037,7 +2261,6 @@ void confMenuAllBrigh() {
     }
   }
 }
-
 
 void confMenuReboot() {
   lcd.clear();
@@ -2151,6 +2374,59 @@ void confMenuRingDim() {
         confRingDim = 0;
       }
       printRingDim(confRingDim);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void printConfReqFm3Scenes(byte confReqFm3Scenes) {
+  lcd.setCursor(11,2);
+  lcd.print(F("   "));
+  lcd.setCursor(11,2);
+  switch (confReqFm3Scenes) {
+    case 0:
+      lcd.print(F("No"));
+      break;
+    case 1:
+      lcd.print(F("Yes"));
+      break;
+  }
+}
+
+void confMenuReqFm3Scenes() {
+  byte confReqFm3Scenes = EEPROM[31];
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print(F("[Edit Request FM3 Scenes]"));
+  lcd.setCursor(0,2);
+  lcd.print(F("Request: "));
+  printConfReqFm3Scenes(confReqFm3Scenes);
+  printEditBar();
+  checkMenuButtonRelease();
+
+  while (true) {
+    if(checkMenuButton(save_button)){
+      EEPROM.update(31, confReqFm3Scenes);
+      requestFm3Scenes = confReqFm3Scenes;
+      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (confReqFm3Scenes == 0) {
+        confReqFm3Scenes = 1;
+      } else {
+        confReqFm3Scenes = 0;
+      }
+      printConfReqFm3Scenes(confReqFm3Scenes);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (confReqFm3Scenes == 0) {
+        confReqFm3Scenes = 1;
+      } else {
+        confReqFm3Scenes = 0;
+      }
+      printConfReqFm3Scenes(confReqFm3Scenes);
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
