@@ -31,6 +31,7 @@ byte ringDim;
 byte requestFm3Scenes;
 boolean editMode = false;
 boolean setActualScene = false;
+boolean hasChangeBank = false;
 unsigned int debounceTime;
 unsigned int longPressTime;
 unsigned int notificationTime;
@@ -414,10 +415,9 @@ void drawColors() {
       g = colors[lpColorNumber-1].g;
       b = colors[lpColorNumber-1].b;
 
-
       if (lpPresetType == 0){
         if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posLong == 0) {
-          if (lpColorType == 0) {
+          if (lpColorType == 0 || posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posLongStatus == 0) {
             for(int j=4; j<7; j++){
               pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
             }
@@ -427,8 +427,14 @@ void drawColors() {
             }
           }
         } else {
-          for(int j=4; j<7; j++){
-            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          if (posData.bank[bankNumber-1].page[pageNumber-1].preset[i].posLongStatus == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          } else {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+            }
           }
         }
       } else if (lpPresetType == 1) {
@@ -447,9 +453,7 @@ void drawColors() {
             }
           }
         }
-      }
-
-      
+      }  
     }
   }
   pixels.show();
@@ -591,16 +595,18 @@ void checkButtons() {
           }
         } else {
           btnPressed(i);
-          // Trigger Release All Action
-          checkMsg(9);
+          if (hasChangeBank) {
+            hasChangeBank = false;
+          } else {
+            // Trigger Release All Action
+            checkMsg(9);
+            if (hasChangeBank){
+              hasChangeBank = false;
+            }
+          }
           drawColors();
-          //byte presetType = 0b00011111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i-2].presetConf);
-          //if (presetType == 0) {
-            //lcdPreset();
-            lcdPresetNames();
-          //} else {
-          //  lcdPresetNames();
-          //}
+          lcdPresetNames();
+          checkMenuButtonRelease();
         }
       }
     }
@@ -634,12 +640,16 @@ void btnPressed(byte i) {
     if ((millis() - pressedTime) > longPressTime) {
       // Trigger Long Press Action
       checkMsg(3);
+
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 1) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
         presetButtonNumber = buttonNumber;
         presetSPNumber = 1;
         lcdPreset();
+      }
+      if (hasChangeBank){
+        return;
       }
       // Change Toggle
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 1) {
@@ -670,6 +680,9 @@ void btnPressed(byte i) {
       }
       // Trigger Release Action
       checkMsg(2);
+      if (hasChangeBank){
+        return;
+      }
       // Change Toggle
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 5) == 1) {
         if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle == 0) {
@@ -700,25 +713,25 @@ void checkMsg(byte action) {
         case 2:
           if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].pos == posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle ||
               data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].pos == 2) {
-            sendMIDIMessage(i);
+            sendMIDIMessage(i, action);
           }
           break;
         case 3:
         case 4:
           if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].pos == posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong ||
               data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].pos == 2) {
-            sendMIDIMessage(i);
+            sendMIDIMessage(i, action);
           }
           break;
         case 9:
-          sendMIDIMessage(i);
+          sendMIDIMessage(i, action);
           break;
       }
     }
   }
 }
 
-void sendMIDIMessage(byte i) {
+void sendMIDIMessage(byte i, byte actionType) {
   switch (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].type) {
     // Program Change
     case 1:
@@ -736,24 +749,31 @@ void sendMIDIMessage(byte i) {
       break;
     // Bank Up
     case 10:
+      hasChangeBank = true;
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankUp();
       lcdChangeAll();
       break;
     // Bank Down
     case 11:
+      hasChangeBank = true;
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankDown();
       lcdChangeAll();
       break;
     // Bank Jump
     case 13:
+    {
+      hasChangeBank = true;
+      byte bankNumberTemp = bankNumber;
       bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
-      pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
+      pageNumber = (data.bank[bankNumberTemp-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
       lcdChangeAll();
       break;
+    }
     // Toggle Page
     case 14:
+      hasChangeBank = true;
       togglePag();
       break;
     // Set Toggle Single
@@ -882,9 +902,11 @@ void sendMIDIMessage(byte i) {
       break;
     // FM3 Preset Change
     case 25:
-      MIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+      MIDI.sendControlChange(0, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
+      MIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       if (sendMIDIMonitor && editMode) {
-        usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+        usbMIDI.sendControlChange(0, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
+        usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       }
       fm3PresetChange();
       break;
@@ -896,7 +918,12 @@ void sendMIDIMessage(byte i) {
       byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0A, 0x00, 0x00, 0x00 };
       dataMiddle[6] = effectID&0x7F;
       dataMiddle[7] = effectID >> 7;
-      dataMiddle[8] = posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle;
+      if (actionType == 1 || actionType == 2) {
+        dataMiddle[8] = posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posSingle;
+      } else {
+        dataMiddle[8] = posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong;
+      }
+      
       byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
       byte dataCRC[] = { checksum };
       byte dataEnd[] = { 0xF7 };
@@ -909,13 +936,45 @@ void sendMIDIMessage(byte i) {
         usbMIDI.sendSysEx(1, dataCRC, true);
         usbMIDI.sendSysEx(1, dataEnd, true);
       }
+      // Recorremos los presets para setear los efectos donde corresponda
+      for(byte i_bank=0; i_bank<n_banks; i_bank++){
+        for(byte i_page=0; i_page<2; i_page++){
+          for(byte i_preset=0; i_preset<n_presets; i_preset++){
+            for(byte i_message=0; i_message<n_messages; i_message++){
+              if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 26) {
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == effectIDIndex) {
+                  if (i_bank == (bankNumber-1) && i_page == (pageNumber-1) && i_preset == (buttonNumber-1) && i_message == i) {
+                    continue;
+                  } else {
+                    if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 1 || data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 2) {
+                      if (dataMiddle[8] == 0) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                      }
+                    } else {
+                      if (dataMiddle[8] == 0) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 1;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                      }
+                      
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       break;
     }
     // FM3 Scene Change
     case 27:
     {
       byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0C, 0x00 };
-      dataMiddle[6] = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      byte numScene = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      dataMiddle[6] = numScene;
       byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
       byte dataCRC[] = { checksum };
       byte dataEnd[] = { 0xF7 };
@@ -935,7 +994,27 @@ void sendMIDIMessage(byte i) {
           for(byte i_preset=0; i_preset<n_presets; i_preset++){
             for(byte i_message=0; i_message<n_messages; i_message++){
               if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
-                posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == numScene) {
+                  if (i_bank == (bankNumber-1) && i_page == (pageNumber-1) && i_preset == (buttonNumber-1) && i_message == i) {
+                    if (actionType == 1 || actionType == 2) {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                    } else {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                    }
+                  } else {
+                    if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 1 || data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 2) {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                    } else {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 1;
+                    }
+                  }
+                } else {
+                  if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 1 || data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 2) {
+                    posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                  } else {
+                    posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                  }
+                }
               }
             }
           }
@@ -951,7 +1030,8 @@ void sendMIDIMessage(byte i) {
       byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0B, 0x00, 0x00, 0x00 };
       dataMiddle[6] = effectID&0x7F;
       dataMiddle[7] = effectID >> 7;
-      dataMiddle[8] = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1];
+      byte numChannel = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1];
+      dataMiddle[8] = numChannel;
       byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
       byte dataCRC[] = { checksum };
       byte dataEnd[] = { 0xF7 };
@@ -964,13 +1044,35 @@ void sendMIDIMessage(byte i) {
         usbMIDI.sendSysEx(1, dataCRC, true);
         usbMIDI.sendSysEx(1, dataEnd, true);
       }
-      // Recorremos los presets para setear las escenas donde corresponda
+      // Recorremos los presets para setear los canales donde corresponda
       for(byte i_bank=0; i_bank<n_banks; i_bank++){
         for(byte i_page=0; i_page<2; i_page++){
           for(byte i_preset=0; i_preset<n_presets; i_preset++){
             for(byte i_message=0; i_message<n_messages; i_message++){
               if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 28) {
-                posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == effectIDIndex) {
+                  if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1] == numChannel) {
+                    if (i_bank == (bankNumber-1) && i_page == (pageNumber-1) && i_preset == (buttonNumber-1) && i_message == i) {
+                      if (actionType == 1 || actionType == 2) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                      }
+                    } else {
+                      if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 1 || data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 2) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 1;
+                      }
+                    }
+                  } else {
+                    if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 1 || data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action == 2) {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                    } else {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                    }
+                  }
+                }
               }
             }
           }
@@ -1134,20 +1236,38 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                 // Seteamos el estado de los efectos y los canales
                 byte effectType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type;
                 if (effectType == 26 || effectType == 28) {
+                  byte actionType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action;
                   bool effectFind = false;
                   for(byte k=0; k<(z*2); k+=2) {
                     if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == effectIDs[k]) {
                       effectFind = true;
-                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 1;
-                      if ((bitValue(effectIDs[k+1], 0) == 0 && effectType == 26) || ((((effectIDs[k+1] >> 1)&0x03) == data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1]) && effectType == 28)) {
-                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      if (actionType == 1 || actionType == 2) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 1;
                       } else {
-                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLongStatus = 1;
+                      }
+                      
+                      if ((bitValue(effectIDs[k+1], 0) == 0 && effectType == 26) || ((((effectIDs[k+1] >> 1)&0x03) == data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1]) && effectType == 28)) {
+                        if (actionType == 1 || actionType == 2) {
+                          posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                        } else {
+                          posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 1;
+                        }
+                      } else {
+                        if (actionType == 1 || actionType == 2) {
+                          posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                        } else {
+                          posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                        }
                       }
                     }
                   }
                   if (!effectFind && effectType == 26) {
-                    posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 0;
+                    if (actionType == 1 || actionType == 2) {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingleStatus = 0;
+                    } else {
+                      posData.bank[i_bank].page[i_page].preset[i_preset].posLongStatus = 0;
+                    }
                   }
                 }
               }
@@ -1172,26 +1292,44 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
               for(byte i_preset=0; i_preset<n_presets; i_preset++){
                 for(byte i_message=0; i_message<n_messages; i_message++){
                   if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
+                    byte actionType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action;
                     if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
                       if (readData[7] == 32) {
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, "Scene ", 24);
-                        data.bank[i_bank].page[i_page].preset[i_preset].longName[6] = (readData[6]+1) + '0';
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                        if (actionType == 1 || actionType == 2) {
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
+                          data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
+                          data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                        } else {
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Scene ", 8);
+                          data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[6] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Scene ", 8);
+                          data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[6] = (readData[6]+1) + '0';
+                        }
                       } else {
                         char rd2[24];
                         for (int i=0; i<24; i++) {
                             rd2[i] = readData[7+i];
                         }
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, rd2, 24);
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                        if (actionType == 1 || actionType == 2) {
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                        } else {
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 8);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 8);
+                        }
                       }
-                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      if (actionType == 1 || actionType == 2) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 1;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 1;
+                      }
                     } else {
-                      posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                      if (actionType == 1 || actionType == 2) {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posSingle = 0;
+                      } else {
+                        posData.bank[i_bank].page[i_page].preset[i_preset].posLong = 0;
+                      }
                     }
                   }
                 }
@@ -1211,22 +1349,33 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
             for(byte i_preset=0; i_preset<n_presets; i_preset++){
               for(byte i_message=0; i_message<n_messages; i_message++){
                 if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 27) {
+                  byte actionType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action;
                   if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
                     if (readData[7] == 32) {
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, "Scene ", 24);
-                      data.bank[i_bank].page[i_page].preset[i_preset].longName[6] = (readData[6]+1) + '0';
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
-                      data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
-                      data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                      if (actionType == 1 || actionType == 2) {
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                      } else {
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Scene ", 8);
+                        data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[6] = (readData[6]+1) + '0';
+                      }
+                      
                     } else {
                       char rd2[24];
                       for (int i=0; i<24; i++) {
                           rd2[i] = readData[7+i];
                       }
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, rd2, 24);
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
-                      strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                      if (actionType == 1 || actionType == 2) {
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                      } else {
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 8);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 8);
+                      }
                     }
                   }
                 }
@@ -1965,13 +2114,13 @@ void showConfMenu(byte page) {
   lcd.setCursor(0,0);
   switch (page) {
     case 1:
-      lcd.print(F("(OmniPor1)(OmniPor2)(ReqScene)(  Page2 )"));
+      lcd.print(F("(OmniPor1)(OmniPor2)          (  Page2 )"));
       break;
     case 2:
       lcd.print(F("(Calibr-1)(Calibr-2)          (  Page3 )"));
       break;
     case 3:
-      lcd.print(F("                              (  Page1 )"));
+      lcd.print(F("(FM3 Menu)                    (  Page1 )"));
       break;
   }
   
@@ -2056,6 +2205,10 @@ void confMenu() {
         case 2:
           confCalibrateExpDown(0);
           break;
+        case 3:
+          showconfMenuFM3();
+          checkMenuButtonRelease();
+          confMenuFM3();
       }
       showConfMenu(page);
       checkMenuButtonRelease();
@@ -2067,15 +2220,6 @@ void confMenu() {
           break;
         case 2:
           confCalibrateExpDown(1);
-          break;
-      }
-      showConfMenu(page);
-      checkMenuButtonRelease();
-    // Button G
-    } else if(checkMenuButton(8)){
-      switch (page) {
-        case 1:
-          confMenuReqFm3Scenes();
           break;
       }
       showConfMenu(page);
@@ -2094,6 +2238,36 @@ void confMenu() {
           break;
       }
       showConfMenu(page);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void showconfMenuFM3() {
+  lcd.clear();
+  // Fila 0 (Superior)
+  lcd.setCursor(0,0);
+  lcd.print(F("(ReqScene)(ReqPName)                   )"));
+  lcd.setCursor(0,1);
+  lcd.print(F("[FM3 Configuration Menu]                "));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void confMenuFM3() {
+  while (true) {
+    // Button E
+    if(checkMenuButton(6)){
+      confmenuReqFm3Scenes();
+      showconfMenuFM3();
+      checkMenuButtonRelease();
+    // Button F
+    } else if(checkMenuButton(7)){
+      confmenuReqFm3PresetsNames();
+      showconfMenuFM3();
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
@@ -2395,7 +2569,7 @@ void printConfReqFm3Scenes(byte confReqFm3Scenes) {
   }
 }
 
-void confMenuReqFm3Scenes() {
+void confmenuReqFm3Scenes() {
   byte confReqFm3Scenes = EEPROM[31];
   lcd.clear();
   lcd.setCursor(0,1);
@@ -2433,6 +2607,55 @@ void confMenuReqFm3Scenes() {
     }
   }
 }
+
+
+
+
+
+
+
+
+
+
+void confmenuReqFm3PresetsNames() {
+  lcd.clear();
+  lcd.setCursor(6,1);
+  lcd.print(F("Request all FM Preset names?"));
+  lcd.setCursor(0,3);
+  lcd.print(F("(Request )                    (  Exit  )"));
+  checkMenuButtonRelease();
+  while (true) {
+    if(checkMenuButton(save_button)){
+      actionReqFm3PresetsNames();
+      checkMenuButtonRelease();
+      return;
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void actionReqFm3PresetsNames() {
+  lcd.clear();
+  lcd.setCursor(14,1);
+  lcd.print(F("Saving..."));
+  return;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void printOmniPort(byte confOmniPort) {
   lcd.setCursor(11,2);
