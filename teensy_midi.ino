@@ -32,6 +32,8 @@ byte requestFm3Scenes;
 boolean editMode = false;
 boolean setActualScene = false;
 boolean hasChangeBank = false;
+int nActualFM3Presets;
+int nTotalFM3Presets;
 unsigned int debounceTime;
 unsigned int longPressTime;
 unsigned int notificationTime;
@@ -637,7 +639,7 @@ void btnPressed(byte i) {
   
   while (true) {
     // Long Press
-    if ((millis() - pressedTime) > longPressTime) {
+    if (((millis() - pressedTime) > longPressTime) && haveLPMsg) {
       // Trigger Long Press Action
       checkMsg(3);
 
@@ -679,6 +681,9 @@ void btnPressed(byte i) {
         lcdPreset();
       }
       // Trigger Release Action
+      if (hasChangeBank){
+        return;
+      }
       checkMsg(2);
       if (hasChangeBank){
         return;
@@ -752,6 +757,7 @@ void sendMIDIMessage(byte i, byte actionType) {
       hasChangeBank = true;
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankUp();
+      drawColors();
       lcdChangeAll();
       break;
     // Bank Down
@@ -759,6 +765,7 @@ void sendMIDIMessage(byte i, byte actionType) {
       hasChangeBank = true;
       pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
       bankDown();
+      drawColors();
       lcdChangeAll();
       break;
     // Bank Jump
@@ -768,6 +775,7 @@ void sendMIDIMessage(byte i, byte actionType) {
       byte bankNumberTemp = bankNumber;
       bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
       pageNumber = (data.bank[bankNumberTemp-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
+      drawColors();
       lcdChangeAll();
       break;
     }
@@ -1280,6 +1288,94 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
         }
         return;
       }
+      break;
+      // Receive Patch Name
+      case 0x0D:
+      {
+        for(byte i_bank=0; i_bank<n_banks; i_bank++){
+          for(byte i_page=0; i_page<2; i_page++){
+            for(byte i_preset=0; i_preset<n_presets; i_preset++){
+              for(byte i_message=0; i_message<n_messages; i_message++){
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 25 &&
+                  data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6] &&
+                  data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1] == readData[7]) {
+                  byte actionType = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].action;
+                  nActualFM3Presets++;
+                  data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] = 0;
+                  char rd2[25];
+                  for (int i=0; i<24; i++) {
+                      rd2[i] = readData[8+i];
+                  }
+                  rd2[24] = 0;
+                  int bankOffset = (i_bank)*(sizeof(data.bank[i_bank]));
+                  int presetOffset;
+                  if (i_page == 0) {
+                    presetOffset = (sizeof(data.bank[i_bank].bankName)) + ((i_preset)*(sizeof(data.bank[i_bank].page[i_page].preset[i_preset])));
+                  } else {
+                    presetOffset = (sizeof(data.bank[i_bank].bankName)) + (sizeof(data.bank[i_bank].page[0])) + ((i_preset)*(sizeof(data.bank[i_bank].page[i_page].preset[i_preset])));
+                  }
+                  // Guardado en memoria
+                  strncpy(data.bank[i_bank].page[i_page].preset[i_preset].longName, rd2, 25);
+                  // Guardado en EEPROM
+                  i2cStat = myEEPROM.write((bankOffset + presetOffset + 1),(byte*)&rd2, 25);
+                  if ( i2cStat != 0 ) {
+                    printMainMsg(13, F("EEPROM w error"), 0);
+                    while (true) {}
+                  }
+                  rd2[8] = 0;
+                  if (actionType == 1 || actionType == 2) {
+                    strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 9);
+                    i2cStat = myEEPROM.write((bankOffset + presetOffset + 26),(byte*)&rd2, 9);
+                    if ( i2cStat != 0 ) {
+                      printMainMsg(13, F("EEPROM w error"), 0);
+                      while (true) {}
+                    }
+                  } else {
+                    strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 9);
+                    i2cStat = myEEPROM.write((bankOffset + presetOffset + 44),(byte*)&rd2, 9);
+                    if ( i2cStat != 0 ) {
+                      printMainMsg(13, F("EEPROM w error"), 0);
+                      while (true) {}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        for(byte i_bank=0; i_bank<n_banks; i_bank++){
+          for(byte i_page=0; i_page<2; i_page++){
+            for(byte i_preset=0; i_preset<n_presets; i_preset++){
+              for(byte i_message=0; i_message<n_messages; i_message++){
+                if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 25 &&
+                  data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] == 1) {
+                  data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] = 0;
+                  // Solicitamos el nombre del preset del FM3
+                  byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0D, 0x00, 0x00 };
+                  dataMiddle[6] = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0];
+                  dataMiddle[7] = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1];
+                  byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+                  byte dataCRC[] = { checksum };
+                  byte dataEnd[] = { 0xF7 };
+                
+                  MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+                  MIDI.sendSysEx(1, dataCRC, true);
+                  MIDI.sendSysEx(1, dataEnd, true);
+                  if (editMode) {
+                    usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+                    usbMIDI.sendSysEx(1, dataCRC, true);
+                    usbMIDI.sendSysEx(1, dataEnd, true);
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        }
+        return;
+      }
+      break;
       // Receive Scene Names
       case 0x0E:
       {
@@ -1307,16 +1403,17 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                           data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[6] = (readData[6]+1) + '0';
                         }
                       } else {
-                        char rd2[24];
-                        for (int i=0; i<24; i++) {
+                        char rd2[9];
+                        for (int i=0; i<8; i++) {
                             rd2[i] = readData[7+i];
                         }
+                        rd2[8] = 0;
                         if (actionType == 1 || actionType == 2) {
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 9);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 9);
                         } else {
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 8);
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 8);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 9);
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 9);
                         }
                       }
                       if (actionType == 1 || actionType == 2) {
@@ -1365,16 +1462,17 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                       }
                       
                     } else {
-                      char rd2[24];
-                      for (int i=0; i<24; i++) {
+                      char rd2[9];
+                      for (int i=0; i<8; i++) {
                           rd2[i] = readData[7+i];
                       }
+                      rd2[8] = 0;
                       if (actionType == 1 || actionType == 2) {
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 8);
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 8);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, rd2, 9);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, rd2, 9);
                       } else {
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 8);
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 8);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, rd2, 9);
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, rd2, 9);
                       }
                     }
                   }
@@ -1395,8 +1493,8 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
             return;
           }
         }
-        break;
       }
+      break;
     }
   }
   drawColors();
@@ -1455,7 +1553,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
   if (editMode) {
     sendMIDIMonitor = false;
     int bankOffset = (bankNumber-1)*(sizeof(data.bank[bankNumber-1]));
-    if (readData[1] != 11 && (readData[1] != 12 || (readData[1] == 12 && readData[2] == 1)) && readData[1] != 13 && readData[1] != 14) {
+    if (readData[1] != 11 && (readData[1] != 12 || (readData[1] == 12 && readData[2] == 1)) && readData[1] != 13 && readData[1] != 14 ) {
       printMainMsg(12, F("Communicating..."), 0);
     }
   
@@ -2620,14 +2718,20 @@ void confmenuReqFm3Scenes() {
 void confmenuReqFm3PresetsNames() {
   lcd.clear();
   lcd.setCursor(6,1);
-  lcd.print(F("Request all FM Preset names?"));
+  lcd.print(F("Request all FM3 Preset names?"));
   lcd.setCursor(0,3);
   lcd.print(F("(Request )                    (  Exit  )"));
   checkMenuButtonRelease();
   while (true) {
     if(checkMenuButton(save_button)){
+      editMode = true;
       actionReqFm3PresetsNames();
       checkMenuButtonRelease();
+      // TODO, añadir MIDI normal y quitar editMode
+      while (nActualFM3Presets != nTotalFM3Presets) {
+        usbMIDI.read();
+      }
+      editMode = false;
       return;
     } else if(checkMenuButton(exit_button)){
       return;
@@ -2636,10 +2740,54 @@ void confmenuReqFm3PresetsNames() {
 }
 
 void actionReqFm3PresetsNames() {
-  lcd.clear();
-  lcd.setCursor(14,1);
-  lcd.print(F("Saving..."));
-  return;
+  // Recorremos los presets para setear los presets
+  nActualFM3Presets = 0;
+  nTotalFM3Presets = 0;
+  for(byte i_bank=0; i_bank<n_banks; i_bank++){
+    for(byte i_page=0; i_page<2; i_page++){
+      for(byte i_preset=0; i_preset<n_presets; i_preset++){
+        for(byte i_message=0; i_message<n_messages; i_message++){
+          if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 25) {
+            data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] = 1;
+            nTotalFM3Presets++;
+          }
+        }
+      }
+    }
+  }
+
+  for(byte i_bank=0; i_bank<n_banks; i_bank++){
+    for(byte i_page=0; i_page<2; i_page++){
+      for(byte i_preset=0; i_preset<n_presets; i_preset++){
+        for(byte i_message=0; i_message<n_messages; i_message++){
+          if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].type == 25 &&
+            data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] == 1) {
+            data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[3] = 0;
+            lcd.clear();
+            lcd.setCursor(14,1);
+            lcd.print(F("Synchronize..."));
+            // Solicitamos el nombre del preset del FM3
+            byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x0D, 0x00, 0x00 };
+            dataMiddle[6] = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0];
+            dataMiddle[7] = data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[1];
+            byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+            byte dataCRC[] = { checksum };
+            byte dataEnd[] = { 0xF7 };
+          
+            MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+            MIDI.sendSysEx(1, dataCRC, true);
+            MIDI.sendSysEx(1, dataEnd, true);
+            if (editMode) {
+              usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+              usbMIDI.sendSysEx(1, dataCRC, true);
+              usbMIDI.sendSysEx(1, dataEnd, true);
+            }
+            return;
+          }
+        }
+      }
+    }
+  }
 }
 
 
