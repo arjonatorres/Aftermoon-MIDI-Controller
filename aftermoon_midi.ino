@@ -16,35 +16,43 @@ void sendMIDIMessage(byte i, byte actionType) {
       break;
     // Bank Up
     case 10:
-      hasChangeBank = true;
-      pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
-      bankUp();
-      drawColors();
-      lcdChangeAll();
+      if (!editMode) {
+        hasChangeBank = true;
+        pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
+        bankUp();
+        drawColors();
+        lcdChangeBank();
+      }
       break;
     // Bank Down
     case 11:
-      hasChangeBank = true;
-      pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
-      bankDown();
-      drawColors();
-      lcdChangeAll();
+      if (!editMode) {
+        hasChangeBank = true;
+        pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
+        bankDown();
+        drawColors();
+        lcdChangeBank();
+      }
       break;
     // Bank Jump
     case 13:
     {
-      hasChangeBank = true;
-      byte bankNumberTemp = bankNumber;
-      bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
-      pageNumber = (data.bank[bankNumberTemp-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
-      drawColors();
-      lcdChangeAll();
+      if (!editMode) {
+        hasChangeBank = true;
+        byte bankNumberTemp = bankNumber;
+        bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+        pageNumber = (data.bank[bankNumberTemp-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
+        drawColors();
+        lcdChangeBank();
+      }
       break;
     }
     // Toggle Page
     case 14:
-      hasChangeBank = true;
-      togglePag();
+      if (!editMode) {
+        hasChangeBank = true;
+        togglePag();
+      }
       break;
     // Set Toggle Single
     case 15:
@@ -471,6 +479,7 @@ void sendUSBExpData(byte pedalNumber) {
 }
 
 void OnSysEx(byte* readData, unsigned sizeofsysex) {
+  delay(10);
   if (readData[1] == 0x00 && readData[2] == 0x01 && readData[3] == 0x74 && readData[4] == 0x11) {
     switch(readData[5]) {
       // Receive all effects status
@@ -551,6 +560,8 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
           isFM3PresetChange =  false;
           fm3Scenes(0x7F);
         }
+        drawColors();
+        delay(200);
         return;
       }
       break;
@@ -657,15 +668,15 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                     if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
                       if (readData[7] == 32) {
                         if (actionType == 1 || actionType == 2) {
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
-                          data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
-                          data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Escena ", 9);
+                          data.bank[i_bank].page[i_page].preset[i_preset].pShortName[7] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Escena ", 9);
+                          data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[7] = (readData[6]+1) + '0';
                         } else {
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Scene ", 8);
-                          data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[6] = (readData[6]+1) + '0';
-                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Scene ", 8);
-                          data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[6] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Escena ", 9);
+                          data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[7] = (readData[6]+1) + '0';
+                          strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Escena ", 9);
+                          data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[7] = (readData[6]+1) + '0';
                         }
                       } else {
                         char rd2[9];
@@ -715,15 +726,15 @@ void OnSysEx(byte* readData, unsigned sizeofsysex) {
                   if (data.bank[i_bank].page[i_page].preset[i_preset].message[i_message].value[0] == readData[6]) {
                     if (readData[7] == 32) {
                       if (actionType == 1 || actionType == 2) {
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].pShortName[6] = (readData[6]+1) + '0';
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pShortName, "Escena ", 9);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pShortName[7] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].pToggleName, "Escena ", 9);
+                        data.bank[i_bank].page[i_page].preset[i_preset].pToggleName[7] = (readData[6]+1) + '0';
                       } else {
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[6] = (readData[6]+1) + '0';
-                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Scene ", 8);
-                        data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[6] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpShortName, "Escena ", 9);
+                        data.bank[i_bank].page[i_page].preset[i_preset].lpShortName[7] = (readData[6]+1) + '0';
+                        strncpy(data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName, "Escena ", 9);
+                        data.bank[i_bank].page[i_page].preset[i_preset].lpToggleName[7] = (readData[6]+1) + '0';
                       }
                       
                     } else {
@@ -821,14 +832,11 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
     sendMIDIMonitor = false;
     int bankOffset = (bankNumber-1)*(sizeof(data.bank[bankNumber-1]));
     if (readData[1] != 11 && (readData[1] != 12 || (readData[1] == 12 && readData[2] == 1)) && readData[1] != 13 && readData[1] != 14 ) {
-      printMainMsg(12, F("Communicating..."), 0);
+      lcd.setCursor(15,2);
+      lcd.print(F("Receiving data..."));
     }
   
     switch (readData[1]) {
-      // TODO - Borrar cuando se habilite el MIDI normal
-      //case 0:
-        //OnSysEx(readData, sizeofsysex);
-        //return;
       // Save Preset Data
       case 1:
         sizeOfData = sizeof(struct Preset) + 7;
@@ -897,7 +905,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
         break;
       // Save Settings Data
       case 6:
-        sizeOfData = 12;
+        sizeOfData = 13;
         if (sizeofsysex == sizeOfData) {
           EEPROM.update(1, readData[2]);
           debounceTime = readData[2] * 10;
@@ -1162,12 +1170,50 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
         delay(100);
         sendRestoreAllBanks(14);
         return;
+      // Toggle Preset
+      case 15:
+        break;
+      // Toggle Page
+      case 16:
+        sizeOfData = 5;
+        if (sizeofsysex == sizeOfData) {
+          togglePag();
+          sendUSBPresetData();
+        }
+        break;
+      // Bank Down
+      case 17:
+        sizeOfData = 5;
+        if (sizeofsysex == sizeOfData) {
+          pageNumber = 1;
+          bankDown();
+          sendUSBPresetData();
+        }
+        break;
+      // Bank Up
+      case 18:
+        sizeOfData = 5;
+        if (sizeofsysex == sizeOfData) {
+          pageNumber = 1;
+          bankUp();
+          sendUSBPresetData();
+        }
+        break;
+      // Edit Mode Off
+      case 19:
+        editMode = false;
+        printMainMsg(14, F("EDIT MODE OFF"), MAIN_MSG_TIME);
+        lcdChangeAll();
+        return;
     }
-    delay(500);
+    lcd.setCursor(15,2);
+    lcd.print(F("Success          "));
+    delay(50);
     drawColors();
     lcdChangeAll();
   } else {
     if (readData[1] == 8) {
+      // Edit Mode On
       sizeOfData = 5;
       if (sizeofsysex == sizeOfData) {
         editMode = true;

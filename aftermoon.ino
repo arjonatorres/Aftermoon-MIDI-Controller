@@ -8,7 +8,7 @@
 
 #define n_messages 8
 #define n_presets 8
-#define n_banks 12
+#define n_banks 20
 #define n_values 4
 #define file_div_size 200
 #define save_button 2
@@ -45,7 +45,7 @@ WDT_T4<WDT1> wdt;
 
 // EEPROM
 const int eepromAddress = 0x50;
-extEEPROM myEEPROM(kbits_256, 1, 64);
+extEEPROM myEEPROM(kbits_512, 1, 64);
 byte i2cStat;
 
 // MIDI
@@ -552,20 +552,37 @@ void checkButtons() {
       if(digitalRead(i)== HIGH){
         // A+B check (Bank Down)
         if (digitalRead(2)== HIGH && digitalRead(3)== HIGH) {
-          pageNumber = 1;
-          bankDown();
-          drawColors();
+          if (!editMode) {
+            pageNumber = 1;
+            bankDown();
+            drawColors();
+            lcdChangeBank();
+          } else {
+            printMainMsg(10, F("EXIT EDIT MODE FIRST"), MAIN_MSG_TIME);
+            lcdChangeAll();
+          }
           checkMenuButtonRelease();
         // B+C check (Toggle Page)
         } else if (digitalRead(3)== HIGH && digitalRead(4)== HIGH) {
-          togglePag();
-          drawColors();
+          if (!editMode) {
+            togglePag();
+            drawColors();
+          } else {
+            printMainMsg(10, F("EXIT EDIT MODE FIRST"), MAIN_MSG_TIME);
+            lcdChangeAll();
+          }
           checkMenuButtonRelease();
         // C+D check (Bank Up)
         } else if (digitalRead(4)== HIGH && digitalRead(5)== HIGH) {
-          pageNumber = 1;
-          bankUp();
-          drawColors();
+          if (!editMode) {
+            pageNumber = 1;
+            bankUp();
+            drawColors();
+            lcdChangeBank();
+          } else {
+            printMainMsg(10, F("EXIT EDIT MODE FIRST"), MAIN_MSG_TIME);
+            lcdChangeAll();
+          }
           checkMenuButtonRelease();
         // D+E check (Web Editor Mode)
         } else if (digitalRead(5)== HIGH && digitalRead(6)== HIGH) {
@@ -624,15 +641,18 @@ void btnPressed(byte i) {
   checkMsg(1);
 
   if (haveLPMsg) {
+    byte buttonNumberTemp;
     if (buttonNumber <= 4) {
-      lcd.setCursor(((buttonNumber-1)*10),3);
+      buttonNumberTemp = buttonNumber-1;
+      lcd.setCursor(((buttonNumberTemp)*10),3);
     } else {
-      lcd.setCursor(((buttonNumber-1)*10),0);
+      buttonNumberTemp = buttonNumber-5;
+      lcd.setCursor(((buttonNumberTemp)*10),0);
     }
     if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0 || (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 0) ) {
-      printPresetPos(buttonNumber, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpShortName);
+      printPresetPos(buttonNumberTemp+1, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpShortName);
     } else {
-      printPresetPos(buttonNumber, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpToggleName);
+      printPresetPos(buttonNumberTemp+1, data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].lpToggleName);
     }
   }
   
@@ -642,6 +662,10 @@ void btnPressed(byte i) {
       // Trigger Long Press Action
       checkMsg(3);
 
+      if (hasChangeBank){
+        return;
+      }
+      
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 1) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
@@ -649,9 +673,7 @@ void btnPressed(byte i) {
         presetSPNumber = 1;
         lcdPreset();
       }
-      if (hasChangeBank){
-        return;
-      }
+      
       // Change Toggle
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 6) == 1) {
         if (posData.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].posLong == 0) {
@@ -672,6 +694,9 @@ void btnPressed(byte i) {
     }
     // Release
     if (digitalRead(i)== LOW) {
+      if (hasChangeBank){
+        return;
+      }
       if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 0) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
@@ -679,10 +704,8 @@ void btnPressed(byte i) {
         presetSPNumber = 0;
         lcdPreset();
       }
+      
       // Trigger Release Action
-      if (hasChangeBank){
-        return;
-      }
       checkMsg(2);
       if (hasChangeBank){
         return;
@@ -760,8 +783,6 @@ void bankDown() {
     bankNumber--;
   }
   EEPROM[0] = bankNumber;
-  lcdPresetNames();
-  lcdBank();
 }
 
 void bankUp() {
@@ -771,8 +792,6 @@ void bankUp() {
     bankNumber++;
   }
   EEPROM[0] = bankNumber;
-  lcdPresetNames();
-  lcdBank();
 }
 
 uint8_t XORChecksum8(const byte *data, size_t dataLength)

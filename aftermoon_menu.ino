@@ -873,7 +873,7 @@ void confMenuDebounceTime() {
       printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
       return;
     } else if(checkMenuButton(prev_button)){
-      if (confDebounceTime > 5) {
+      if (confDebounceTime > 2) {
         confDebounceTime -= 1;
       } else {
         confDebounceTime = 30;
@@ -884,7 +884,7 @@ void confMenuDebounceTime() {
       if (confDebounceTime < 30) {
         confDebounceTime += 1;
       } else {
-        confDebounceTime = 5;
+        confDebounceTime = 2;
       }
       printDebounceTime(confDebounceTime);
       checkMenuButtonRelease();

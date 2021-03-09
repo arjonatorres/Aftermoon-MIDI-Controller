@@ -24,23 +24,41 @@ void lcdBank() {
   lcd.print(F(data.bank[bankNumber-1].bankName));
 }
 
+void lcdChangeBank() {
+  if (!editMode && notificationTime != 0) {
+    lcd.clear();
+    lcd.setCursor(((40-strlen(data.bank[bankNumber-1].bankName))/2)-1,1);
+    lcd.print(F(data.bank[bankNumber-1].bankName));
+    lcd.setCursor(16,2);
+    lcd.print(F("Bank "));
+    lcd.setCursor(21,2);
+    lcd.print(bankNumber, DEC);
+    delay(notificationTime);
+  }
+  lcdPresetNames();
+  lcdBank();
+}
+
 void lcdPreset() {
   lcd.setCursor(0,2);
-  lcd.print(F("PST                              "));
-  lcd.setCursor(4,2);
-  if (presetButtonNumber != 0) {
-    if (pageNumber == 1) {
-      lcd.print(presetsName[presetButtonNumber-1]);
-    } else {
-      lcd.print(presetsName[(presetButtonNumber-1)+n_presets]);
+  if (!editMode) {
+    lcd.print(F("PST                              "));
+    lcd.setCursor(4,2);
+    if (presetButtonNumber != 0) {
+      if (pageNumber == 1) {
+        lcd.print(presetsName[presetButtonNumber-1]);
+      } else {
+        lcd.print(presetsName[(presetButtonNumber-1)+n_presets]);
+      }
     }
-  }
-  
-  lcd.setCursor(5,2);
-  lcd.print(F(": "));
-  lcd.setCursor(7,2);
-  if (presetButtonNumber != 0) {
-    lcd.print(data.bank[presetBankNumber-1].page[presetPageNumber-1].preset[presetButtonNumber-1].longName);
+    lcd.setCursor(5,2);
+    lcd.print(F(": "));
+    lcd.setCursor(7,2);
+    if (presetButtonNumber != 0) {
+      lcd.print(data.bank[presetBankNumber-1].page[presetPageNumber-1].preset[presetButtonNumber-1].longName);
+    }
+  } else {
+    lcd.print(F("[In Edit Mode]                   "));
   }
 }
 
