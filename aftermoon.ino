@@ -32,12 +32,27 @@ boolean editMode = false;
 boolean setActualScene = false;
 boolean hasChangeBank = false;
 boolean isFM3PresetChange = false;
+boolean receivingDump = false;
+boolean inEditMenu = false;
+float BPM = 120;
+float tempo = (int)(1000/(BPM/60));
+unsigned long prevmillis = 0;
+unsigned long currentMillis = 0;
+float prevmillisTempo = 0;
+float interval_temp;
+unsigned long currentMillisTempo;
+boolean haveTempoPreset = false;
+boolean showTapTempo = true;
+byte sendMidiClockTempo;
+byte sendFM3Tempo;
+byte sendHKTempo;
 int nActualFM3Presets;
 int nTotalFM3Presets;
 unsigned int debounceTime;
 unsigned int longPressTime;
 unsigned int notificationTime;
-unsigned long pressedTime  = 0;
+unsigned long pressedTime = 0;
+unsigned long pressedTapTime = 0;
 short expDown[OMNIPORT_NUMBER];
 short expUp[OMNIPORT_NUMBER];
 char presetsName[16] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'};
@@ -151,6 +166,7 @@ int fm3Effects[] = {
 
 // Data
 byte bankNumber;
+byte lastBankNumber;
 byte pageNumber;
 byte buttonNumber;
 byte sceneNumber;
@@ -174,7 +190,7 @@ struct ExpMsg
   };
 struct Preset
   {
-    byte presetConf;                  // Bit 6 - lpToggleMode, Bit 5 - spToggleMode, Bit 1 lp Preset Type, Bit 0 sp Preset Type
+    byte presetConf;                  // Bit 6 - lpToggleMode, Bit 5 - spToggleMode, Bit 3-2 lp Preset Type, Bit 1-0 sp Preset Type
     char longName[25] = "EMPTY";
     char pShortName[9] = "EMPTY";
     char pToggleName[9] = "EMPTY";
@@ -277,8 +293,12 @@ void setup() {
     EEPROM.get((10+(4*i))+2,expUp[i]);
   }
   requestFm3Scenes = EEPROM[31];
-  
+  sendMidiClockTempo = EEPROM[32];
+  sendFM3Tempo = EEPROM[33];
+  sendHKTempo = EEPROM[34];
+
   bankNumber = EEPROM[0];
+  lastBankNumber = bankNumber;
   pageNumber = 1;
   buttonNumber = 1;
   presetBankNumber = 0;
@@ -299,22 +319,127 @@ void setup() {
   }
   drawColors();
   lcdChangeAll();
+  calculateHaveTempoPreset();
 }
 
 void loop() {
   MIDI.read();
   usbMIDI.read();
-  checkButtons();
-  checkOmniPorts();
+  if (!receivingDump) {
+    checkButtons();
+    checkOmniPorts();
+    checkShowTapTempo();
+    midiClockTempo();
+  }
 }
 
-void drawColors() {
-  for(int i=0; i<8; i++){
+void midiClockTempo() {
+  if (sendMidiClockTempo) {
+    interval_temp = tempo/24.0;    //interval is the number of milliseconds defined by tempo formula.
+    currentMillisTempo = millis();
+    if(currentMillisTempo - prevmillisTempo >= interval_temp) {
+      //save the last time.
+      prevmillisTempo = currentMillisTempo;
+      MIDI.sendClock();
+    }
+  }
+}
+
+void checkShowTapTempo() {
+  currentMillis = millis();
+  if ((!showTapTempo && ((currentMillis - prevmillis) >= 150)) || (showTapTempo && ((currentMillis - (prevmillis)) >= tempo))) {
+    if (showTapTempo) {
+      prevmillis = currentMillis;
+    }
+    lcdBPM(showTapTempo);
+    if (haveTempoPreset) {
+      ledBPM(showTapTempo);
+    }
+    showTapTempo = !showTapTempo;
+  }
+}
+
+void ledBPM(boolean activo) {
+  for(int i=0; i<n_presets; i++) {
     // SP Colors
     byte r;
     byte g;
     byte b;
-    byte spPresetType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf, 0);
+    byte spPresetType = 0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf);
+    int spColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor);
+    int lpColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor);
+    byte spColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor, 6);
+    r = colors[spColorNumber].r;
+    g = colors[spColorNumber].g;
+    b = colors[spColorNumber].b;
+    
+    if (spPresetType == 2) {
+      if (activo) {
+        for(int j=0; j<3; j++){
+          pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+        }
+        if (lpColorNumber == 0) {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        }
+      } else {
+        if (spColorType == 0) {
+          for(int j=0; j<3; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          }
+        } else {
+          for(int j=0; j<3; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+          }
+          if (lpColorNumber == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+          }
+        }
+      }
+    }
+    if (lpColorNumber != 0) {
+      byte lpPresetType = (0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf))>>2;
+      byte lpColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor, 6);
+      r = colors[lpColorNumber-1].r;
+      g = colors[lpColorNumber-1].g;
+      b = colors[lpColorNumber-1].b;
+      if (lpPresetType == 2){
+        if (activo) {
+          for(int j=4; j<7; j++){
+            pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringBright)/100))), (uint8_t)(round(g*(((float)ringBright)/100))), (uint8_t)(round(b*(((float)ringBright)/100)))));
+          }
+        } else {
+          if (lpColorType == 0) {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color(0,0,0));
+            }
+          } else {
+            for(int j=4; j<7; j++){
+              pixels.setPixelColor((i*8)+j, pixels.Color((uint8_t)(round(r*(((float)ringDim)/100))), (uint8_t)(round(g*(((float)ringDim)/100))), (uint8_t)(round(b*(((float)ringDim)/100)))));
+            }
+          }
+        }
+      }
+    }
+  }
+  pixels.show();
+}
+
+void drawColors() {
+  for(int i=0; i<n_presets; i++){
+    // SP Colors
+    byte r;
+    byte g;
+    byte b;
+    byte spPresetType = 0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf);
     int spColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor);
     int lpColorNumber = 0b00111111&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor);
     byte spColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].spColor, 6);
@@ -410,7 +535,7 @@ void drawColors() {
       }
     }
     if (lpColorNumber != 0) {
-      byte lpPresetType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf, 1);
+      byte lpPresetType = (0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf))>>2;
       byte lpColorType = bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[i].lpColor, 6);
       r = colors[lpColorNumber-1].r;
       g = colors[lpColorNumber-1].g;
@@ -555,6 +680,7 @@ void checkButtons() {
           if (!editMode) {
             pageNumber = 1;
             bankDown();
+            calculateHaveTempoPreset();
             drawColors();
             lcdChangeBank();
           } else {
@@ -566,6 +692,7 @@ void checkButtons() {
         } else if (digitalRead(3)== HIGH && digitalRead(4)== HIGH) {
           if (!editMode) {
             togglePag();
+            calculateHaveTempoPreset();
             drawColors();
           } else {
             printMainMsg(10, F("EXIT EDIT MODE FIRST"), MAIN_MSG_TIME);
@@ -577,6 +704,7 @@ void checkButtons() {
           if (!editMode) {
             pageNumber = 1;
             bankUp();
+            calculateHaveTempoPreset();
             drawColors();
             lcdChangeBank();
           } else {
@@ -601,11 +729,13 @@ void checkButtons() {
           if (!editMode) {
             pixels.clear();
             pixels.show();
+            inEditMenu = true;
             showConfMenu(1);
             checkMenuButtonRelease();
             confMenu();
             lcdChangeAll();
             drawColors();
+            inEditMenu = true;
             checkMenuButtonRelease();
           } else {
             printMainMsg(10, F("EXIT EDIT MODE FIRST"), MAIN_MSG_TIME);
@@ -657,6 +787,7 @@ void btnPressed(byte i) {
   }
   
   while (true) {
+    checkShowTapTempo();
     // Long Press
     if (((millis() - pressedTime) > longPressTime) && haveLPMsg) {
       // Trigger Long Press Action
@@ -665,8 +796,8 @@ void btnPressed(byte i) {
       if (hasChangeBank){
         return;
       }
-      
-      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 1) == 1) {
+
+      if (((0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf))>>2) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
         presetButtonNumber = buttonNumber;
@@ -685,6 +816,7 @@ void btnPressed(byte i) {
       drawColors();
       
       while (true) {
+        checkShowTapTempo();
         if (digitalRead(i)== LOW) {
           // Trigger Long Press Release Action
           checkMsg(4);
@@ -697,7 +829,7 @@ void btnPressed(byte i) {
       if (hasChangeBank){
         return;
       }
-      if (bitValue(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf, 0) == 1) {
+      if ((0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf)) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
         presetButtonNumber = buttonNumber;
@@ -754,6 +886,9 @@ void checkMsg(byte action) {
           sendMIDIMessage(i, action);
           break;
       }
+      if (hasChangeBank){
+        return;
+      }
     }
   }
 }
@@ -777,6 +912,7 @@ void togglePag() {
 }
 
 void bankDown() {
+  lastBankNumber = bankNumber;
   if (bankNumber == 1) {
     bankNumber = n_banks;
   } else {
@@ -786,6 +922,7 @@ void bankDown() {
 }
 
 void bankUp() {
+  lastBankNumber = bankNumber;
   if (bankNumber == n_banks) {
     bankNumber = 1;
   } else {
@@ -802,4 +939,14 @@ uint8_t XORChecksum8(const byte *data, size_t dataLength)
     value ^= (uint8_t)data[i];
   }
   return value&0x7F;
+}
+
+void calculateHaveTempoPreset() {
+  haveTempoPreset = false;
+  for(int i=0; i<n_presets; i++) {
+    if (((0b00000011&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf)) == 2) || (((0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf))>>2) == 2)) {
+      haveTempoPreset = true;
+      return;
+    }
+  } 
 }

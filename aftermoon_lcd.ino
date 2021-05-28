@@ -34,6 +34,7 @@ void lcdChangeBank() {
     lcd.setCursor(21,2);
     lcd.print(bankNumber, DEC);
     delay(notificationTime);
+    lcd.clear();
   }
   lcdPresetNames();
   lcdBank();
@@ -127,4 +128,30 @@ void printMainMsg(int cursorPos, String lcdText, int delayTime) {
   lcd.setCursor(cursorPos,1);
   lcd.print(lcdText);
   delay(delayTime);
+}
+
+void lcdBPM(boolean activo) {
+  if (activo) {
+    if (BPM < 100) {
+      lcd.setCursor(33,2);
+      midiClockTempo();
+      lcd.print(F(" "));
+      midiClockTempo();
+      lcd.setCursor(34,2);
+    } else {
+      lcd.setCursor(33,2);
+    }
+    midiClockTempo();
+    lcd.print((int)BPM, DEC);
+    midiClockTempo();
+    lcd.setCursor(37,2);
+    midiClockTempo();
+    lcd.print(F("BPM"));
+    midiClockTempo();
+  } else {
+    lcd.setCursor(33,2);
+    midiClockTempo();
+    lcd.print(F("       "));
+    midiClockTempo();
+  }
 }

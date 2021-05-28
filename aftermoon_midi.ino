@@ -14,12 +14,25 @@ void sendMIDIMessage(byte i, byte actionType) {
         usbMIDI.sendControlChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[2]);
       }
       break;
+    // Midi Clock
+    case 7:
+      BPM = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      if ((data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) != 0) {
+        int BPMSec = (int)(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+        BPM = (BPMSec << 7) + BPM;
+      }
+      tempo = (int)(1000/(BPM/60));
+      midiClockTempo();
+      FM3Tempo();
+      HKTempo();
+      break;
     // Bank Up
     case 10:
       if (!editMode) {
         hasChangeBank = true;
         pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
         bankUp();
+        calculateHaveTempoPreset();
         drawColors();
         lcdChangeBank();
       }
@@ -30,6 +43,7 @@ void sendMIDIMessage(byte i, byte actionType) {
         hasChangeBank = true;
         pageNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]) + 1;
         bankDown();
+        calculateHaveTempoPreset();
         drawColors();
         lcdChangeBank();
       }
@@ -40,8 +54,15 @@ void sendMIDIMessage(byte i, byte actionType) {
       if (!editMode) {
         hasChangeBank = true;
         byte bankNumberTemp = bankNumber;
-        bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+        if (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0] == 127) {
+          bankNumber = lastBankNumber;
+        } else {
+          bankNumber = (data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0]);
+        }
+        lastBankNumber = bankNumberTemp;
         pageNumber = (data.bank[bankNumberTemp-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]) + 1;
+        EEPROM[0] = bankNumber;
+        calculateHaveTempoPreset();
         drawColors();
         lcdChangeBank();
       }
@@ -174,9 +195,47 @@ void sendMIDIMessage(byte i, byte actionType) {
       }
       break;
     }
+    // FM3 Tuner
+    case 21:
+    {
+      // Enviamos el Tuner al FM3
+      byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x11, 0x00 };
+      dataMiddle[6] = data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0];
+      byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+      byte dataCRC[] = { checksum };
+      byte dataEnd[] = { 0xF7 };
+    
+      MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      MIDI.sendSysEx(1, dataCRC, true);
+      MIDI.sendSysEx(1, dataEnd, true);
+      if (editMode) {
+        usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+        usbMIDI.sendSysEx(1, dataCRC, true);
+        usbMIDI.sendSysEx(1, dataEnd, true);
+      }
+      break;
+    }
     // Delay
     case 23:
       delay((data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0])*10);
+      break;
+    // Midi Clock Tap
+    case 24:
+      if (((pressedTime-pressedTapTime) > 2500)) {
+        pressedTapTime = pressedTime;
+        return;
+      }
+      if ((pressedTime-pressedTapTime) < 240) {
+        BPM = 250;
+      } else {
+        BPM = (int)(60/((pressedTime-pressedTapTime)/1000.0));
+      }
+      pressedTapTime = pressedTime;
+      tempo = (int)(1000/(BPM/60));
+      
+      midiClockTempo();
+      FM3Tempo();
+      HKTempo();
       break;
     // FM3 Preset Change
     case 25:
@@ -377,6 +436,34 @@ void fm3PresetChange() {
     usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
     usbMIDI.sendSysEx(1, dataCRC, true);
     usbMIDI.sendSysEx(1, dataEnd, true);
+  }
+}
+
+void FM3Tempo() {
+  // Enviamos el Tempo al FM3
+  if (sendFM3Tempo) {
+    byte dataMiddle[] = { 0xF0, 0x00, 0x01, 0x74, 0x11, 0x14, 0x00, 0x00 };
+    dataMiddle[6] = (int)BPM&0x7F;
+    dataMiddle[7] = (int)BPM >> 7;
+    byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+    byte dataCRC[] = { checksum };
+    byte dataEnd[] = { 0xF7 };
+  
+    MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+    MIDI.sendSysEx(1, dataCRC, true);
+    MIDI.sendSysEx(1, dataEnd, true);
+    if (editMode) {
+      usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      usbMIDI.sendSysEx(1, dataCRC, true);
+      usbMIDI.sendSysEx(1, dataEnd, true);
+    }
+  }
+}
+
+void HKTempo() {
+  // Enviamos el Tempo al HK
+  if (sendHKTempo) {
+    return;
   }
 }
 
@@ -862,6 +949,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
           }
           printMainMsg(14, F("Saved Preset"), MAIN_MSG_TIME);
         }
+        calculateHaveTempoPreset();
         break;
         
       // Save Bank Data
@@ -988,6 +1076,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
             lcd.print(F("(  Save  )                    (  Exit  )"));
             while (true) {
               if(checkMenuButton(save_button)){
+                receivingDump = true;
                 // Guardado en memoria
                 memcpy(&bankTemp, &readData[4], file_div_size);
   
@@ -1031,7 +1120,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
                   lcd.setCursor(8,1);
                   lcd.print(F("Error receiving data..."));
                   delay(1000);
-                  break;
+                  return;
                 }
                 memcpy(&bankTemp[restoreBankContRx * file_div_size], &readData[3], sizeofsysex-5);
                 if ((restoreBankCont+1) < 10) {
@@ -1059,11 +1148,12 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
                 lcd.print(F("Saved Backup Data in Bank"));
                 lcd.setCursor(31,1);
                 lcd.print(bankNumber);
+                receivingDump = false;
                 delay(300);
               }
           } else {
             printMainMsg(7, F("Error al recibir los datos"), MAIN_MSG_TIME);
-            break;
+            return;
           }
         }
         break;
@@ -1209,6 +1299,7 @@ void OnUSBSysEx(byte* readData, unsigned sizeofsysex) {
     lcd.setCursor(15,2);
     lcd.print(F("Success          "));
     delay(50);
+    calculateHaveTempoPreset();
     drawColors();
     lcdChangeAll();
   } else {

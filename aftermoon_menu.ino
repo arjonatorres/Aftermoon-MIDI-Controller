@@ -87,10 +87,13 @@ void resetSettings() {
   EEPROM[1] = 10; // debounceTime
   EEPROM[2] = 50; // longPressTime
   EEPROM[3] = 40; // notificationTime
-  EEPROM[4] = 100; // ringBright
-  EEPROM[5] = 10; // ringDim
-  EEPROM[30] = 2; // allBright
+  EEPROM[4] = 80; // ringBright
+  EEPROM[5] = 5; // ringDim
+  EEPROM[30] = 3; // allBright
   EEPROM[31] = 0; // requestFm3Scenes
+  EEPROM[32] = 0; // sendMidiClockTempo
+  EEPROM[33] = 0; // sendFM3Tempo
+  EEPROM[34] = 0; // sendHKTempo
 
   short confCalibrateExpDown = 0;
   short confCalibrateExpUp = 1023;
@@ -136,7 +139,7 @@ void showConfMenu(byte page) {
       lcd.print(F("(Calibr-1)(Calibr-2)          (  Page3 )"));
       break;
     case 3:
-      lcd.print(F("(FM3 Menu)                    (  Page1 )"));
+      lcd.print(F("(  MIDI  )(  FM3   )          (  Page1 )"));
       break;
   }
   
@@ -160,6 +163,9 @@ void showConfMenu(byte page) {
 void checkMenuButtonRelease() {
   boolean releaseAll = false;
   while (!releaseAll) {
+    if (!inEditMenu) {
+      checkShowTapTempo();
+    }
     releaseAll = true;
     for(int i=2; i<=9; i++){
       if(digitalRead(i)== HIGH){
@@ -177,10 +183,14 @@ void confMenu() {
     if(checkMenuButton(2)){
       switch (page) {
         case 1:
-          confMenuDebounceTime();
+        {
+          byte varValueTemp = debounceTime/10;
+          confmenuEepromInt(varValueTemp, 1, F("Edit Debounce Time"), F("Debounce Time(ms)"), 2, 30, 1, false, 10);
+          debounceTime = varValueTemp*10;
+        }
           break;
         case 2:
-          confMenuRingBright();
+          confmenuEepromInt(ringBright, 4, F("Edit Led Ring Bright"), F("Led Ring Bright"), 25, 100, 5, false, 1);
           break;
       }
       showConfMenu(page);
@@ -189,10 +199,14 @@ void confMenu() {
     } else if(checkMenuButton(3)){
       switch (page) {
         case 1:
-          confMenuLongPressTime();
+        {
+          byte varValueTemp = longPressTime/10;
+          confmenuEepromInt(varValueTemp, 1, F("Edit Long Press Time"), F("Long Press Time(ms)"), 10, 120, 5, false, 10);
+          longPressTime = varValueTemp*10;
+        }
           break;
         case 2:
-          confMenuRingDim();
+          confmenuEepromInt(ringDim, 5, F("Edit Led Ring Dim"), F("Led Ring Dim"), 0, 50, 5, false, 1);
           break;
       }
       showConfMenu(page);
@@ -201,10 +215,22 @@ void confMenu() {
     } else if(checkMenuButton(4)){
       switch (page) {
         case 1:
-          confMenuNotificationTime();
+        {
+          byte varValueTemp = notificationTime/10;
+          confmenuEepromInt(varValueTemp, 3, F("Edit Notification Time"), F("Notification Time(ms)"), 0, 100, 5, false, 10);
+          notificationTime = varValueTemp*10;
+        }
           break;
         case 2:
-          confMenuAllBrigh();
+        {
+          byte varValueTemp = EEPROM[30];
+          confmenuEepromInt(varValueTemp, 30, F("Edit Led All Bright"), F("Led All Bright"), 0, 8, 1, false, 1);
+          if (varValueTemp == 0) {
+            pixels.setBrightness(0);
+          } else {
+            pixels.setBrightness((EEPROM[30]*32)-1);
+          }
+        }
           break;
         case 3:
           confMenuReboot();
@@ -222,9 +248,10 @@ void confMenu() {
           confCalibrateExpDown(0);
           break;
         case 3:
-          showconfMenuFM3();
+          showconfMenuMIDI();
           checkMenuButtonRelease();
-          confMenuFM3();
+          confMenuMIDI();
+          break;
       }
       showConfMenu(page);
       checkMenuButtonRelease();
@@ -236,6 +263,11 @@ void confMenu() {
           break;
         case 2:
           confCalibrateExpDown(1);
+          break;
+        case 3:
+          showconfMenuFM3();
+          checkMenuButtonRelease();
+          confMenuFM3();
           break;
       }
       showConfMenu(page);
@@ -261,11 +293,36 @@ void confMenu() {
   }
 }
 
+void showconfMenuMIDI() {
+  lcd.clear();
+  // Fila 0 (Superior)
+  lcd.setCursor(0,0);
+  lcd.print(F("( Clock  )                              "));
+  lcd.setCursor(0,1);
+  lcd.print(F("[MIDI Configuration Menu]               "));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void confMenuMIDI() {
+  while (true) {
+    // Button E
+    if(checkMenuButton(6)){
+      confmenuEepromInt(sendMidiClockTempo, 32, F("Edit Send MIDI Clock"), F("Value"), 0, 1, 1, true, 1);
+      showconfMenuMIDI();
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
 void showconfMenuFM3() {
   lcd.clear();
   // Fila 0 (Superior)
   lcd.setCursor(0,0);
-  lcd.print(F("(ReqScene)(ReqPName)                   )"));
+  lcd.print(F("(ReqScene)(ReqPName)                    "));
   lcd.setCursor(0,1);
   lcd.print(F("[FM3 Configuration Menu]                "));
   // Fila 3 (Inferior)
@@ -277,7 +334,7 @@ void confMenuFM3() {
   while (true) {
     // Button E
     if(checkMenuButton(6)){
-      confmenuReqFm3Scenes();
+      confmenuEepromInt(requestFm3Scenes, 31, F("Edit Request FM3 Scenes"), F("Value"), 0, 1, 1, true, 1);
       showconfMenuFM3();
       checkMenuButtonRelease();
     // Button F
@@ -402,56 +459,6 @@ void confCalibrateExpUp(byte pedalNumber) {
   }
 }
 
-void printAllBright(byte confAll) {
-  lcd.setCursor(16,2);
-  lcd.print(F("      "));
-  lcd.setCursor(16,2);
-  lcd.print(confAll);
-}
-
-void confMenuAllBrigh() {
-  byte confAllBrigh = EEPROM[30];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Led All Bright]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Led All Bright: "));
-  printAllBright(confAllBrigh);
-  printEditBar();
-  checkMenuButtonRelease();
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(30, confAllBrigh);
-      if (confAllBrigh == 0) {
-        pixels.setBrightness(0);
-      } else {
-        pixels.setBrightness((EEPROM[30]*32)-1);
-      }
-      
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confAllBrigh > 0) {
-        confAllBrigh -= 1;
-      } else {
-        confAllBrigh = 8;
-      }
-      printAllBright(confAllBrigh);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confAllBrigh < 8) {
-        confAllBrigh += 1;
-      } else {
-        confAllBrigh = 0;
-      }
-      printAllBright(confAllBrigh);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
 void confMenuReboot() {
   lcd.clear();
   lcd.setCursor(9,1);
@@ -479,149 +486,6 @@ void actionReboot() {
   //config.callback = myCallback;
   wdt.begin(config);
   while (true) {}
-}
-
-void printRingBright(byte confRing) {
-  lcd.setCursor(17,2);
-  lcd.print(F("      "));
-  lcd.setCursor(17,2);
-  lcd.print(confRing);
-}
-
-void confMenuRingBright() {
-  byte confRingBright = EEPROM[4];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Led Ring Bright]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Led Ring Bright: "));
-  printRingBright(confRingBright);
-  printEditBar();
-  checkMenuButtonRelease();
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(4, confRingBright);
-      ringBright = confRingBright;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confRingBright > 25) {
-        confRingBright -= 5;
-      } else {
-        confRingBright = 100;
-      }
-      printRingBright(confRingBright);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confRingBright < 100) {
-        confRingBright += 5;
-      } else {
-        confRingBright = 25;
-      }
-      printRingBright(confRingBright);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
-void printRingDim(byte confRing) {
-  lcd.setCursor(14,2);
-  lcd.print(F("      "));
-  lcd.setCursor(14,2);
-  lcd.print(confRing);
-}
-
-void confMenuRingDim() {
-  byte confRingDim = EEPROM[5];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Led Ring Dim]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Led Ring Dim: "));
-  printRingDim(confRingDim);
-  printEditBar();
-  checkMenuButtonRelease();
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(5, confRingDim);
-      ringDim = confRingDim;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confRingDim > 0) {
-        confRingDim -= 5;
-      } else {
-        confRingDim = 50;
-      }
-      printRingDim(confRingDim);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confRingDim < 50) {
-        confRingDim += 5;
-      } else {
-        confRingDim = 0;
-      }
-      printRingDim(confRingDim);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
-void printConfReqFm3Scenes(byte confReqFm3Scenes) {
-  lcd.setCursor(11,2);
-  lcd.print(F("   "));
-  lcd.setCursor(11,2);
-  switch (confReqFm3Scenes) {
-    case 0:
-      lcd.print(F("No"));
-      break;
-    case 1:
-      lcd.print(F("Yes"));
-      break;
-  }
-}
-
-void confmenuReqFm3Scenes() {
-  byte confReqFm3Scenes = EEPROM[31];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Request FM3 Scenes]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Request: "));
-  printConfReqFm3Scenes(confReqFm3Scenes);
-  printEditBar();
-  checkMenuButtonRelease();
-
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(31, confReqFm3Scenes);
-      requestFm3Scenes = confReqFm3Scenes;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confReqFm3Scenes == 0) {
-        confReqFm3Scenes = 1;
-      } else {
-        confReqFm3Scenes = 0;
-      }
-      printConfReqFm3Scenes(confReqFm3Scenes);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confReqFm3Scenes == 0) {
-        confReqFm3Scenes = 1;
-      } else {
-        confReqFm3Scenes = 0;
-      }
-      printConfReqFm3Scenes(confReqFm3Scenes);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
 }
 
 void confmenuReqFm3PresetsNames() {
@@ -757,144 +621,66 @@ void confMenuOmniPort(byte portNumber) {
   }
 }
 
-void printNotificationTime(byte confNotificationTime) {
-  lcd.setCursor(23,2);
-  lcd.print(F("        "));
-  lcd.setCursor(23,2);
-  lcd.print(confNotificationTime * 10);
-}
-
-void confMenuNotificationTime() {
-  byte confNotificationTime = EEPROM[3];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Notification Time]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Notification Time(ms): "));
-  printNotificationTime(confNotificationTime);
-  printEditBar();
-  checkMenuButtonRelease();
-
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(3, confNotificationTime);
-      notificationTime = confNotificationTime * 10;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confNotificationTime > 0) {
-        confNotificationTime -= 5;
-      } else {
-        confNotificationTime = 100;
-      }
-      printNotificationTime(confNotificationTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confNotificationTime < 100) {
-        confNotificationTime += 5;
-      } else {
-        confNotificationTime = 0;
-      }
-      printNotificationTime(confNotificationTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
-void printLongPressTime(byte confLongPressTime) {
-  lcd.setCursor(21,2);
-  lcd.print(F("       "));
-  lcd.setCursor(21,2);
-  lcd.print(confLongPressTime * 10);
-}
-
-void confMenuLongPressTime() {
-  byte confLongPressTime = EEPROM[2];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Long Press Time]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Long Press Time(ms): "));
-  printLongPressTime(confLongPressTime);
-  printEditBar();
-  checkMenuButtonRelease();
-  
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(2, confLongPressTime);
-      longPressTime = confLongPressTime * 10;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confLongPressTime > 10) {
-        confLongPressTime -= 5;
-      } else {
-        confLongPressTime = 120;
-      }
-      printLongPressTime(confLongPressTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confLongPressTime < 120) {
-        confLongPressTime += 5;
-      } else {
-        confLongPressTime = 10;
-      }
-      printLongPressTime(confLongPressTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
-void printDebounceTime(byte confDebounceTime) {
-  lcd.setCursor(19,2);
-  lcd.print(F("     "));
-  lcd.setCursor(19,2);
-  lcd.print(confDebounceTime * 10);
-}
-
-void confMenuDebounceTime() {
-  byte confDebounceTime = EEPROM[1];
-  lcd.clear();
-  lcd.setCursor(0,1);
-  lcd.print(F("[Edit Debounce Time]"));
-  lcd.setCursor(0,2);
-  lcd.print(F("Debounce Time(ms): "));
-  printDebounceTime(confDebounceTime);
-  printEditBar();
-  checkMenuButtonRelease();
-  while (true) {
-    if(checkMenuButton(save_button)){
-      EEPROM.update(1, confDebounceTime);
-      debounceTime = confDebounceTime * 10;
-      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
-      return;
-    } else if(checkMenuButton(prev_button)){
-      if (confDebounceTime > 2) {
-        confDebounceTime -= 1;
-      } else {
-        confDebounceTime = 30;
-      }
-      printDebounceTime(confDebounceTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(next_button)){
-      if (confDebounceTime < 30) {
-        confDebounceTime += 1;
-      } else {
-        confDebounceTime = 2;
-      }
-      printDebounceTime(confDebounceTime);
-      checkMenuButtonRelease();
-    } else if(checkMenuButton(exit_button)){
-      return;
-    }
-  }
-}
-
 void printEditBar() {
   lcd.setCursor(0,3);
   lcd.print(F("(  Save  )(  Down  )(   Up   )(  Exit  )"));
+}
+
+void printConfEepromInt(byte varTemp, boolean isYesNo, byte cursorPos, int multFactor) {
+  lcd.setCursor(cursorPos+1,2);
+  lcd.print(F("        "));
+  lcd.setCursor(cursorPos+1,2);
+  if (isYesNo) {
+    switch (varTemp) {
+      case 0:
+        lcd.print(F("No"));
+        break;
+      case 1:
+        lcd.print(F("Yes"));
+        break;
+    }
+  } else {
+    lcd.print(varTemp * multFactor);
+  }
+}
+
+void confmenuEepromInt(byte &varName, byte eepromPosNumber, String mainText, String secundaryText, byte minValue, byte maxValue, byte stepValue, boolean isYesNo, int multFactor) {
+  mainText = F("[") + mainText + F("]");
+  secundaryText = secundaryText + F(":");
+  byte varTemp = EEPROM[eepromPosNumber];
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print(mainText);
+  lcd.setCursor(0,2);
+  lcd.print(secundaryText);
+  printConfEepromInt(varTemp, isYesNo, secundaryText.length(), multFactor);
+  printEditBar();
+  checkMenuButtonRelease();
+
+  while (true) {
+    if(checkMenuButton(save_button)){
+      EEPROM.update(eepromPosNumber, varTemp);
+      varName = varTemp * multFactor;
+      printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
+      return;
+    } else if(checkMenuButton(prev_button)){
+      if (varTemp > minValue) {
+        varTemp -= stepValue;
+      } else {
+        varTemp = maxValue;
+      }
+      printConfEepromInt(varTemp, isYesNo, secundaryText.length(), multFactor);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(next_button)){
+      if (varTemp < maxValue) {
+        varTemp += stepValue;
+      } else {
+        varTemp = minValue;
+      }
+      printConfEepromInt(varTemp, isYesNo, secundaryText.length(), multFactor);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
 }
