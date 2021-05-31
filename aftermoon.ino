@@ -46,6 +46,7 @@ boolean showTapTempo = true;
 byte sendMidiClockTempo;
 byte sendFM3Tempo;
 byte sendHKTempo;
+byte sendMIDIUSB;
 int nActualFM3Presets;
 int nTotalFM3Presets;
 unsigned int debounceTime;
@@ -296,6 +297,7 @@ void setup() {
   sendMidiClockTempo = EEPROM[32];
   sendFM3Tempo = EEPROM[33];
   sendHKTempo = EEPROM[34];
+  sendMIDIUSB = EEPROM[35];
 
   bankNumber = EEPROM[0];
   lastBankNumber = bankNumber;
@@ -639,7 +641,7 @@ void checkExp(byte pedalNumber) {
           byte maxValue = data.bank[bankNumber-1].port[pedalNumber].message[i].value[2];
           byte mapValue = map(nMappedValue, 0, 127, minValue, maxValue);
           MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], mapValue, data.bank[bankNumber-1].port[pedalNumber].message[i].value[3]);
-          if (sendMIDIMonitor && editMode) {
+          if ((sendMIDIMonitor && editMode) || sendMIDIUSB) {
             usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], mapValue, data.bank[bankNumber-1].port[pedalNumber].message[i].value[3]);
           }
         }
@@ -648,7 +650,7 @@ void checkExp(byte pedalNumber) {
       case 2:
         if (nMappedValue == 0) {
           MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
-          if (sendMIDIMonitor && editMode) {
+          if ((sendMIDIMonitor && editMode) || sendMIDIUSB) {
             usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
           }
         }
@@ -657,7 +659,7 @@ void checkExp(byte pedalNumber) {
       case 3:
         if (nMappedValue == 127) {
           MIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
-          if (sendMIDIMonitor && editMode) {
+          if ((sendMIDIMonitor && editMode) || sendMIDIUSB) {
             usbMIDI.sendControlChange(data.bank[bankNumber-1].port[pedalNumber].message[i].value[0], data.bank[bankNumber-1].port[pedalNumber].message[i].value[1], data.bank[bankNumber-1].port[pedalNumber].message[i].value[2]);
           }
         }

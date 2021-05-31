@@ -94,6 +94,7 @@ void resetSettings() {
   EEPROM[32] = 0; // sendMidiClockTempo
   EEPROM[33] = 0; // sendFM3Tempo
   EEPROM[34] = 0; // sendHKTempo
+  EEPROM[35] = 0; // sendMIDIUSB
 
   short confCalibrateExpDown = 0;
   short confCalibrateExpUp = 1023;
@@ -297,7 +298,7 @@ void showconfMenuMIDI() {
   lcd.clear();
   // Fila 0 (Superior)
   lcd.setCursor(0,0);
-  lcd.print(F("( Clock  )                              "));
+  lcd.print(F("( Clock  )(  USB   )                    "));
   lcd.setCursor(0,1);
   lcd.print(F("[MIDI Configuration Menu]               "));
   // Fila 3 (Inferior)
@@ -312,6 +313,11 @@ void confMenuMIDI() {
       confmenuEepromInt(sendMidiClockTempo, 32, F("Edit Send MIDI Clock"), F("Value"), 0, 1, 1, true, 1);
       showconfMenuMIDI();
       checkMenuButtonRelease();
+    // Button F
+    } else if(checkMenuButton(7)){
+      confmenuEepromInt(sendMIDIUSB, 35, F("Edit Send USB MIDI"), F("Value"), 0, 1, 1, true, 1);
+      showconfMenuMIDI();
+      checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
     }
@@ -322,7 +328,7 @@ void showconfMenuFM3() {
   lcd.clear();
   // Fila 0 (Superior)
   lcd.setCursor(0,0);
-  lcd.print(F("(ReqScene)(ReqPName)                    "));
+  lcd.print(F("(ReqScene)(ReqPName)(FM3Tempo)          "));
   lcd.setCursor(0,1);
   lcd.print(F("[FM3 Configuration Menu]                "));
   // Fila 3 (Inferior)
@@ -340,6 +346,11 @@ void confMenuFM3() {
     // Button F
     } else if(checkMenuButton(7)){
       confmenuReqFm3PresetsNames();
+      showconfMenuFM3();
+      checkMenuButtonRelease();
+    // Button G
+    } else if(checkMenuButton(8)){
+      confmenuEepromInt(sendFM3Tempo, 33, F("Edit Send FM3 Tempo"), F("Value"), 0, 1, 1, true, 1);
       showconfMenuFM3();
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
