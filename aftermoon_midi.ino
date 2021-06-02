@@ -463,7 +463,22 @@ void FM3Tempo() {
 void HKTempo() {
   // Enviamos el Tempo al HK
   if (sendHKTempo) {
-    return;
+    int tempoTemp = (int)(((tempo-50)*255)/1310);
+    byte dataMiddle[] = { 0xF0, 0x00, 0x20, 0x44, 0x00, 0x10, 0x00, 0x09, 0x00, 0x04, 0x04, 0x00, 0x00 };
+    dataMiddle[11] = tempoTemp >> 7;
+    dataMiddle[12] = tempoTemp&0x7F;
+    byte checksum = XORChecksum8((byte*)&dataMiddle, sizeof(dataMiddle));
+    byte dataCRC[] = { checksum };
+    byte dataEnd[] = { 0xF7 };
+  
+    MIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+    MIDI.sendSysEx(1, dataCRC, true);
+    MIDI.sendSysEx(1, dataEnd, true);
+    if (editMode) {
+      usbMIDI.sendSysEx(sizeof(dataMiddle), (byte*)&dataMiddle, true);
+      usbMIDI.sendSysEx(1, dataCRC, true);
+      usbMIDI.sendSysEx(1, dataEnd, true);
+    }
   }
 }
 

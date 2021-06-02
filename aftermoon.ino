@@ -799,7 +799,7 @@ void btnPressed(byte i) {
         return;
       }
 
-      if (((0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[i].presetConf))>>2) == 1) {
+      if (((0b00001100&(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].presetConf))>>2) == 1) {
         presetBankNumber = bankNumber;
         presetPageNumber = pageNumber;
         presetButtonNumber = buttonNumber;

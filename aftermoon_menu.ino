@@ -140,7 +140,7 @@ void showConfMenu(byte page) {
       lcd.print(F("(Calibr-1)(Calibr-2)          (  Page3 )"));
       break;
     case 3:
-      lcd.print(F("(  MIDI  )(  FM3   )          (  Page1 )"));
+      lcd.print(F("(  MIDI  )(  FM3   )(  H&K   )(  Page1 )"));
       break;
   }
   
@@ -185,13 +185,13 @@ void confMenu() {
       switch (page) {
         case 1:
         {
-          byte varValueTemp = debounceTime/10;
-          confmenuEepromInt(varValueTemp, 1, F("Edit Debounce Time"), F("Debounce Time(ms)"), 2, 30, 1, false, 10);
-          debounceTime = varValueTemp*10;
+          confmenuEepromInt(1, F("Edit Debounce Time"), F("Debounce Time(ms)"), 2, 30, 1, false, 10);
+          debounceTime = EEPROM[1]*10;
         }
           break;
         case 2:
-          confmenuEepromInt(ringBright, 4, F("Edit Led Ring Bright"), F("Led Ring Bright"), 25, 100, 5, false, 1);
+          confmenuEepromInt(4, F("Edit Led Ring Bright"), F("Led Ring Bright"), 25, 100, 5, false, 1);
+          ringBright = EEPROM[4];
           break;
       }
       showConfMenu(page);
@@ -201,13 +201,13 @@ void confMenu() {
       switch (page) {
         case 1:
         {
-          byte varValueTemp = longPressTime/10;
-          confmenuEepromInt(varValueTemp, 1, F("Edit Long Press Time"), F("Long Press Time(ms)"), 10, 120, 5, false, 10);
-          longPressTime = varValueTemp*10;
+          confmenuEepromInt(2, F("Edit Long Press Time"), F("Long Press Time(ms)"), 10, 120, 5, false, 10);
+          longPressTime = EEPROM[2]*10;
         }
           break;
         case 2:
-          confmenuEepromInt(ringDim, 5, F("Edit Led Ring Dim"), F("Led Ring Dim"), 0, 50, 5, false, 1);
+          confmenuEepromInt(5, F("Edit Led Ring Dim"), F("Led Ring Dim"), 0, 50, 5, false, 1);
+          ringDim = EEPROM[5];
           break;
       }
       showConfMenu(page);
@@ -217,16 +217,14 @@ void confMenu() {
       switch (page) {
         case 1:
         {
-          byte varValueTemp = notificationTime/10;
-          confmenuEepromInt(varValueTemp, 3, F("Edit Notification Time"), F("Notification Time(ms)"), 0, 100, 5, false, 10);
-          notificationTime = varValueTemp*10;
+          confmenuEepromInt(3, F("Edit Notification Time"), F("Notification Time(ms)"), 0, 100, 5, false, 10);
+          notificationTime = EEPROM[3]*10;
         }
           break;
         case 2:
         {
-          byte varValueTemp = EEPROM[30];
-          confmenuEepromInt(varValueTemp, 30, F("Edit Led All Bright"), F("Led All Bright"), 0, 8, 1, false, 1);
-          if (varValueTemp == 0) {
+          confmenuEepromInt(30, F("Edit Led All Bright"), F("Led All Bright"), 0, 8, 1, false, 1);
+          if (EEPROM[30] == 0) {
             pixels.setBrightness(0);
           } else {
             pixels.setBrightness((EEPROM[30]*32)-1);
@@ -273,6 +271,17 @@ void confMenu() {
       }
       showConfMenu(page);
       checkMenuButtonRelease();
+    // Button G
+    } else if(checkMenuButton(8)){
+      switch (page) {
+        case 3:
+          showconfMenuHandK();
+          checkMenuButtonRelease();
+          confMenuHandK();
+          break;
+      }
+      showConfMenu(page);
+      checkMenuButtonRelease();
     // Button H
     } else if(checkMenuButton(9)){
       switch (page) {
@@ -310,12 +319,14 @@ void confMenuMIDI() {
   while (true) {
     // Button E
     if(checkMenuButton(6)){
-      confmenuEepromInt(sendMidiClockTempo, 32, F("Edit Send MIDI Clock"), F("Value"), 0, 1, 1, true, 1);
+      confmenuEepromInt(32, F("Edit Send MIDI Clock"), F("Value"), 0, 1, 1, true, 1);
+      sendMidiClockTempo = EEPROM[32];
       showconfMenuMIDI();
       checkMenuButtonRelease();
     // Button F
     } else if(checkMenuButton(7)){
-      confmenuEepromInt(sendMIDIUSB, 35, F("Edit Send USB MIDI"), F("Value"), 0, 1, 1, true, 1);
+      confmenuEepromInt(35, F("Edit Send USB MIDI"), F("Value"), 0, 1, 1, true, 1);
+      sendMIDIUSB = EEPROM[35];
       showconfMenuMIDI();
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
@@ -340,7 +351,8 @@ void confMenuFM3() {
   while (true) {
     // Button E
     if(checkMenuButton(6)){
-      confmenuEepromInt(requestFm3Scenes, 31, F("Edit Request FM3 Scenes"), F("Value"), 0, 1, 1, true, 1);
+      confmenuEepromInt(31, F("Edit Request FM3 Scenes"), F("Value"), 0, 1, 1, true, 1);
+      requestFm3Scenes = EEPROM[31];
       showconfMenuFM3();
       checkMenuButtonRelease();
     // Button F
@@ -350,8 +362,35 @@ void confMenuFM3() {
       checkMenuButtonRelease();
     // Button G
     } else if(checkMenuButton(8)){
-      confmenuEepromInt(sendFM3Tempo, 33, F("Edit Send FM3 Tempo"), F("Value"), 0, 1, 1, true, 1);
+      confmenuEepromInt(33, F("Edit Send FM3 Tempo"), F("Value"), 0, 1, 1, true, 1);
+      sendFM3Tempo = EEPROM[33];
       showconfMenuFM3();
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void showconfMenuHandK() {
+  lcd.clear();
+  // Fila 0 (Superior)
+  lcd.setCursor(0,0);
+  lcd.print(F("(H&KTempo)                              "));
+  lcd.setCursor(0,1);
+  lcd.print(F("[H&K Configuration Menu]                "));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void confMenuHandK() {
+  while (true) {
+    // Button E
+    if(checkMenuButton(6)){
+      confmenuEepromInt(34, F("Edit Send H&K Tempo"), F("Value"), 0, 1, 1, true, 1);
+      sendHKTempo = EEPROM[34];
+      showconfMenuHandK();
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
@@ -655,7 +694,7 @@ void printConfEepromInt(byte varTemp, boolean isYesNo, byte cursorPos, int multF
   }
 }
 
-void confmenuEepromInt(byte &varName, byte eepromPosNumber, String mainText, String secundaryText, byte minValue, byte maxValue, byte stepValue, boolean isYesNo, int multFactor) {
+void confmenuEepromInt(byte eepromPosNumber, String mainText, String secundaryText, byte minValue, byte maxValue, byte stepValue, boolean isYesNo, int multFactor) {
   mainText = F("[") + mainText + F("]");
   secundaryText = secundaryText + F(":");
   byte varTemp = EEPROM[eepromPosNumber];
@@ -671,7 +710,6 @@ void confmenuEepromInt(byte &varName, byte eepromPosNumber, String mainText, Str
   while (true) {
     if(checkMenuButton(save_button)){
       EEPROM.update(eepromPosNumber, varTemp);
-      varName = varTemp * multFactor;
       printMainMsg(17, F("Saved"), MAIN_MSG_TIME);
       return;
     } else if(checkMenuButton(prev_button)){
