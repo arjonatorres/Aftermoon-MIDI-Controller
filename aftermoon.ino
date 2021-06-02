@@ -47,6 +47,7 @@ byte sendMidiClockTempo;
 byte sendFM3Tempo;
 byte sendHKTempo;
 byte sendMIDIUSB;
+byte showBlink;
 int nActualFM3Presets;
 int nTotalFM3Presets;
 unsigned int debounceTime;
@@ -298,6 +299,7 @@ void setup() {
   sendFM3Tempo = EEPROM[33];
   sendHKTempo = EEPROM[34];
   sendMIDIUSB = EEPROM[35];
+  showBlink = EEPROM[36];
 
   bankNumber = EEPROM[0];
   lastBankNumber = bankNumber;
@@ -337,9 +339,9 @@ void loop() {
 
 void midiClockTempo() {
   if (sendMidiClockTempo) {
-    interval_temp = tempo/24.0;    //interval is the number of milliseconds defined by tempo formula.
-    currentMillisTempo = millis();
-    if(currentMillisTempo - prevmillisTempo >= interval_temp) {
+    interval_temp = 60L * 1000 * 1000 / BPM /24.0;    //interval is the number of milliseconds defined by tempo formula.
+    currentMillisTempo = micros();
+    if(currentMillisTempo - prevmillisTempo > interval_temp) {
       //save the last time.
       prevmillisTempo = currentMillisTempo;
       MIDI.sendClock();
@@ -353,7 +355,7 @@ void checkShowTapTempo() {
     if (showTapTempo) {
       prevmillis = currentMillis;
     }
-    lcdBPM(showTapTempo);
+    lcdBPM(showTapTempo, false);
     if (haveTempoPreset) {
       ledBPM(showTapTempo);
     }

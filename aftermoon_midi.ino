@@ -232,7 +232,9 @@ void sendMIDIMessage(byte i, byte actionType) {
       }
       pressedTapTime = pressedTime;
       tempo = (int)(1000/(BPM/60));
-      
+      if (!showBlink) {
+        lcdBPM(true, true);
+      }
       midiClockTempo();
       FM3Tempo();
       HKTempo();

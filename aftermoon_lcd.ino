@@ -3,6 +3,9 @@ void lcdChangeAll() {
   lcdPresetNames();
   lcdBank();
   lcdPreset();
+  if (!showBlink) {
+    lcdBPM(true, true);
+  }
 }
 
 void lcdBank() {
@@ -130,28 +133,30 @@ void printMainMsg(int cursorPos, String lcdText, int delayTime) {
   delay(delayTime);
 }
 
-void lcdBPM(boolean activo) {
-  if (activo) {
-    if (BPM < 100) {
-      lcd.setCursor(33,2);
+void lcdBPM(boolean activo, boolean mostrar) {
+  if (showBlink || mostrar) {
+    if (activo) {
+      if (BPM < 100) {
+        lcd.setCursor(33,2);
+        midiClockTempo();
+        lcd.print(F(" "));
+        midiClockTempo();
+        lcd.setCursor(34,2);
+      } else {
+        lcd.setCursor(33,2);
+      }
       midiClockTempo();
-      lcd.print(F(" "));
+      lcd.print((int)BPM, DEC);
       midiClockTempo();
-      lcd.setCursor(34,2);
+      lcd.setCursor(37,2);
+      midiClockTempo();
+      lcd.print(F("BPM"));
+      midiClockTempo();
     } else {
       lcd.setCursor(33,2);
+      midiClockTempo();
+      lcd.print(F("       "));
+      midiClockTempo();
     }
-    midiClockTempo();
-    lcd.print((int)BPM, DEC);
-    midiClockTempo();
-    lcd.setCursor(37,2);
-    midiClockTempo();
-    lcd.print(F("BPM"));
-    midiClockTempo();
-  } else {
-    lcd.setCursor(33,2);
-    midiClockTempo();
-    lcd.print(F("       "));
-    midiClockTempo();
   }
 }

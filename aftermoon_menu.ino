@@ -95,6 +95,7 @@ void resetSettings() {
   EEPROM[33] = 0; // sendFM3Tempo
   EEPROM[34] = 0; // sendHKTempo
   EEPROM[35] = 0; // sendMIDIUSB
+  EEPROM[36] = 1; // showBlink
 
   short confCalibrateExpDown = 0;
   short confCalibrateExpUp = 1023;
@@ -156,7 +157,7 @@ void showConfMenu(byte page) {
       lcd.print(F("(RingBrig)(RingDim )(AllBrigh)(  Exit  )"));
       break;
     case 3:
-      lcd.print(F("                    ( Reboot )(  Exit  )"));
+      lcd.print(F("(  LCD   )          ( Reboot )(  Exit  )"));
       break;
   }
 }
@@ -192,6 +193,11 @@ void confMenu() {
         case 2:
           confmenuEepromInt(4, F("Edit Led Ring Bright"), F("Led Ring Bright"), 25, 100, 5, false, 1);
           ringBright = EEPROM[4];
+          break;
+        case 3:
+          showconfMenuLCD();
+          checkMenuButtonRelease();
+          confMenuLCD();
           break;
       }
       showConfMenu(page);
@@ -296,6 +302,32 @@ void confMenu() {
           break;
       }
       showConfMenu(page);
+      checkMenuButtonRelease();
+    } else if(checkMenuButton(exit_button)){
+      return;
+    }
+  }
+}
+
+void showconfMenuLCD() {
+  lcd.clear();
+  // Fila 0 (Superior)
+  lcd.setCursor(0,0);
+  lcd.print(F("( Blink  )                              "));
+  lcd.setCursor(0,1);
+  lcd.print(F("[LCD Configuration Menu]                "));
+  // Fila 3 (Inferior)
+  lcd.setCursor(0,3);
+  lcd.print(F("                              (  Exit  )"));
+}
+
+void confMenuLCD() {
+  while (true) {
+    // Button E
+    if(checkMenuButton(6)){
+      confmenuEepromInt(36, F("Edit Show BPM Blink"), F("Value"), 0, 1, 1, true, 1);
+      showBlink = EEPROM[36];
+      showconfMenuLCD();
       checkMenuButtonRelease();
     } else if(checkMenuButton(exit_button)){
       return;
