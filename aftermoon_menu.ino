@@ -79,7 +79,18 @@ void factoryMenu() {
 }
 
 void resetBanks() {
-  myEEPROM.write(0,(byte*)&data, sizeof(data));
+  i2cStat = myEEPROM.write(0,(byte*)&data, sizeof(data));
+  if ( i2cStat != 0 ) {
+    //there was a problem
+    if ( i2cStat == EEPROM_ADDR_ERR) {
+      printMainMsg(12, F("Bad EEPROM Address"), 0);
+    }
+    else {
+      printMainMsg(13, F("EEPROM w error"), 0);
+    }
+    
+    while (true) {}
+  }
 }
 
 void resetSettings() {

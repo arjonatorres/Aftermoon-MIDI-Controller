@@ -421,6 +421,14 @@ void sendMIDIMessage(byte i, byte actionType) {
       }
       break;
     }
+    // Hughes & Kettner Program Change
+    case 30:
+      MIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+      if ((sendMIDIMonitor && editMode) || sendMIDIUSB) {
+        usbMIDI.sendProgramChange(data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[0], data.bank[bankNumber-1].page[pageNumber-1].preset[buttonNumber-1].message[i].value[1]);
+      }
+      HKTempo();
+      break;
   }
 }
 
