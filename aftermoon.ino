@@ -43,6 +43,7 @@ float interval_temp;
 unsigned long currentMillisTempo;
 boolean haveTempoPreset = false;
 boolean showTapTempo = true;
+boolean twoButtonPressed = false;
 byte sendMidiClockTempo;
 byte sendFM3Tempo;
 byte sendHKTempo;
@@ -747,18 +748,22 @@ void checkButtons() {
           }
         } else {
           btnPressed(i);
-          if (hasChangeBank) {
-            hasChangeBank = false;
-          } else {
-            // Trigger Release All Action
-            checkMsg(9);
-            if (hasChangeBank){
+          if (!twoButtonPressed) {
+            if (hasChangeBank) {
               hasChangeBank = false;
+            } else {
+              // Trigger Release All Action
+              checkMsg(9);
+              if (hasChangeBank){
+                hasChangeBank = false;
+              }
             }
+            drawColors();
+            lcdPresetNames();
+            checkMenuButtonRelease();
           }
-          drawColors();
-          lcdPresetNames();
-          checkMenuButtonRelease();
+          
+          twoButtonPressed = false;
         }
       }
     }
@@ -792,6 +797,10 @@ void btnPressed(byte i) {
   
   while (true) {
     checkShowTapTempo();
+    if (twoButtonHasPressed(i)) {
+      twoButtonPressed = true;
+      return;
+    }
     // Long Press
     if (((millis() - pressedTime) > longPressTime) && haveLPMsg) {
       // Trigger Long Press Action
@@ -857,6 +866,18 @@ void btnPressed(byte i) {
       return;
     }
   }
+}
+
+bool twoButtonHasPressed(byte i) {
+  for(byte y=2; y<=(n_presets+1); y++){
+      if (i == y) {
+        continue;
+      }
+      if(digitalRead(y)== HIGH){
+        return true;  
+      }
+  }
+  return false;
 }
 
 bool checkLPMsg() {

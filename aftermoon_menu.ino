@@ -95,7 +95,7 @@ void resetBanks() {
 
 void resetSettings() {
   EEPROM[0] = 1; // bankNumber
-  EEPROM[1] = 10; // debounceTime
+  EEPROM[1] = 1; // debounceTime
   EEPROM[2] = 50; // longPressTime
   EEPROM[3] = 40; // notificationTime
   EEPROM[4] = 80; // ringBright
@@ -197,7 +197,7 @@ void confMenu() {
       switch (page) {
         case 1:
         {
-          confmenuEepromInt(1, F("Edit Debounce Time"), F("Debounce Time(ms)"), 2, 30, 1, false, 10);
+          confmenuEepromInt(1, F("Edit Debounce Time"), F("Debounce Time(ms)"), 1, 30, 1, false, 10);
           debounceTime = EEPROM[1]*10;
         }
           break;
